@@ -14,7 +14,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ////
-== TinkerPop3
+== Gremlin Temporal Translator POC
 image:https://img.shields.io/maven-central/v/org.apache.tinkerpop/gremlin-driver?color=brightgreen[link="https://mvnrepository.com/artifact/org.apache.tinkerpop/gremlin-driver"]
 image:https://img.shields.io/nuget/v/Gremlin.Net?color=brightgreen[link="https://www.nuget.org/packages/Gremlin.Net"]
 image:https://img.shields.io/pypi/v/gremlinpython?color=brightgreen[link="https://pypi.org/project/gremlinpython/"]
@@ -33,6 +33,8 @@ Apache TinkerPop™ provides graph computing capabilities for both graph databas
 * link:https://tinkerpop.apache.org/docs/current/reference/[reference documentation]
 * link:https://tinkerpop.apache.org/javadocs/current/core/[core javadoc]
 * link:https://tinkerpop.apache.org/javadocs/current/full/[full javadoc]
+
+NOTE: This file primarily documents the native **Temporal Functionality** provided by the underlying T-TinkerPop architecture. For the documentation regarding the **Gremlin Temporal Translator POC** (the active project in this repository), please refer to `README.md`.
 
 Additionally to the above, we have added temporal functionality.
 
@@ -200,10 +202,30 @@ g.V().has("name", "source")
 
 === Building and Testing
 
+Before building this extension, you must locally install the core research dependencies:
+
+1. **chronograph-practice**:
+[source,bash]
+----
+git clone https://github.com/dfpl/chronograph-practice
+cd chronograph-practice/chronograph
+mvn clean install
+----
+
+2. **t-tinkerpop**:
+[source,bash]
+----
+git clone https://github.com/alexspitalas/T-tinkerpop
+cd T-tinkerpop
+mvn clean install
+----
+
 TinkerPop uses link:https://maven.apache.org/[Maven] and requires `Java 11` for proper building and proper operations. To build, execute unit tests and package Gremlin Console/Server run:
 
 [source,bash]
+----
 mvn clean install
+----
 
 Please see the xref:docs/src/dev/developer/development-environment.asciidoc#building-on-windows[Building on Windows] section for Windows specific build instructions.
 
