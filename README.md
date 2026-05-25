@@ -71,7 +71,8 @@ gremlin-temporal-translator-poc/
     │
     └── bench/
         ├── TranslatorVsNativeBenchmark.java # Translation overhead & execution comparison
-        └── ChronoGraphBenchmark.java    # Scalability & Operator comparison (ChronoGraph vs Native)
+        ├── ChronoGraphBenchmark.java    # Scalability & Operator comparison (ChronoGraph vs Native)
+        └── TemporalLifetimeStorageBenchmark.java # lifetime() storage read/write comparison
 ```
 
 ## Quick Start
@@ -501,6 +502,24 @@ mvn exec:java -Dexec.mainClass="com.temporal.gremlin.bench.ChronoGraphBenchmark"
 | **temporalOverlaps** | 6.7 ms | 13.4 ms | 0.50x |
 
 **Observation**: For pure linear scans without indices, ChronoGraph's raw edge iteration is faster (~2x) than Gremlin's traversal overhead. However, real-world Native T-Gremlin usage would employ indices (`g.E().has("startTime", P.gt(x))`) to achieve O(log N) performance.
+
+### 3. Temporal Lifetime Storage Benchmark
+Run the lifetime storage comparison benchmark:
+```bash
+mvn exec:java -Dexec.mainClass="com.temporal.gremlin.bench.TemporalLifetimeStorageBenchmark"
+```
+
+This benchmark uses synthetic temporal edges written through `lifetime()` to
+compare read and write costs across lifetime storage implementations. It is
+intended to be run on both the old string-backed storage implementation and the
+new Date-backed storage implementation, then compared by average milliseconds.
+
+**Output sections**:
+- **CORRECTNESS**: Shows mixed date formats where raw string comparison differs from parsed date comparison.
+- **MAIN**: Measures the `AllenFilterStep` parse-on-read path, which is the key read benchmark.
+- **BASELINE**: Measures the public Allen DSL `has()+P` path, where predicates compare property values directly.
+- **OTHER**: Measures another parse-on-read path through `temporalPageRank`.
+- **WRITE**: Measures `lifetime()` write-time normalization cost.
 
 ## Testing
 
