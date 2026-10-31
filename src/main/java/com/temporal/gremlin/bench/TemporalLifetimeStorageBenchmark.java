@@ -37,9 +37,10 @@ public class TemporalLifetimeStorageBenchmark {
     private static final int WARMUP_ITERATIONS = 5;
     private static final int BENCHMARK_ITERATIONS = 30;
     private static final int MUTATION_ITERATIONS = 1000;
-    private static final int[] SIZES = {1000, 10000, 100000};
+    private static final int[] SIZES = {1000, 5000, 10000, 50000, 100000, 250000, 500000, 1000000};
 
     private static final long DAY = 24L * 60L * 60L * 1000L;
+    private static final int OFFSET_WINDOW_DAYS = 3650;
     private static final long REFERENCE_START = Instant.parse("2024-01-15T12:00:00Z").toEpochMilli();
     private static final long REFERENCE_END = Instant.parse("2024-01-25T12:00:00Z").toEpochMilli();
     private static final DateTimeFormatter OLD_COMPATIBLE_DATE_TIME =
@@ -152,7 +153,9 @@ public class TemporalLifetimeStorageBenchmark {
     }
 
     private long[] intervalFor(int edgeIndex) {
-        long offset = (edgeIndex / 5) * DAY;
+        // Keep generated timestamps within a modern ten-year window. The number of edges should increase the amount of
+        // benchmark data, not expand its date range into the Gregorian calendar cutover where legacy parsers disagree.
+        long offset = ((edgeIndex / 5) % OFFSET_WINDOW_DAYS) * DAY;
         switch (edgeIndex % 5) {
             case 0:
                 return new long[] {REFERENCE_START - (20 * DAY) - offset, REFERENCE_START - (10 * DAY) - offset};
