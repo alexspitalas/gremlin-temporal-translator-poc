@@ -1,5 +1,6 @@
 package com.temporal.gremlin.bench;
 
+import org.apache.tinkerpop.gremlin.process.traversal.Temporal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversal;
 import org.apache.tinkerpop.gremlin.process.traversal.step.filter.AllenFilterStep;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
@@ -104,11 +105,11 @@ public class TemporalLifetimeStorageBenchmark {
             warmupReadBenchmarks();
 
             printReadHeader();
-            benchmarkRead("MAIN", "AllenFilterStep", "before", () -> allenFilterStepCount(AllenFilterStep.AllenRelation.BEFORE));
-            benchmarkRead("MAIN", "AllenFilterStep", "after", () -> allenFilterStepCount(AllenFilterStep.AllenRelation.AFTER));
-            benchmarkRead("MAIN", "AllenFilterStep", "overlaps", () -> allenFilterStepCount(AllenFilterStep.AllenRelation.OVERLAPS));
-            benchmarkRead("MAIN", "AllenFilterStep", "during", () -> allenFilterStepCount(AllenFilterStep.AllenRelation.DURING));
-            benchmarkRead("MAIN", "AllenFilterStep", "contains", () -> allenFilterStepCount(AllenFilterStep.AllenRelation.CONTAINS));
+            benchmarkRead("MAIN", "AllenFilterStep", "before", () -> allenFilterStepCount(Temporal.precedes));
+            benchmarkRead("MAIN", "AllenFilterStep", "after", () -> allenFilterStepCount(Temporal.succeeds));
+            benchmarkRead("MAIN", "AllenFilterStep", "overlaps", () -> allenFilterStepCount(Temporal.overlaps));
+            benchmarkRead("MAIN", "AllenFilterStep", "during", () -> allenFilterStepCount(Temporal.during));
+            benchmarkRead("MAIN", "AllenFilterStep", "contains", () -> allenFilterStepCount(Temporal.contains));
             benchmarkRead("BASELINE", "AllenStep DSL", "before", () -> g.E().hasLabel("event").temporalBefore(referenceEdge).count().next());
             benchmarkRead("BASELINE", "AllenStep DSL", "overlaps", () -> g.E().hasLabel("event").temporalOverlaps(referenceEdge).count().next());
             benchmarkRead("OTHER", "temporalPageRank", "rank", () -> g.V().temporalPageRank().count().next());
@@ -172,18 +173,18 @@ public class TemporalLifetimeStorageBenchmark {
 
     private void warmupReadBenchmarks() {
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-            sink = allenFilterStepCount(AllenFilterStep.AllenRelation.BEFORE);
-            sink = allenFilterStepCount(AllenFilterStep.AllenRelation.AFTER);
-            sink = allenFilterStepCount(AllenFilterStep.AllenRelation.OVERLAPS);
-            sink = allenFilterStepCount(AllenFilterStep.AllenRelation.DURING);
-            sink = allenFilterStepCount(AllenFilterStep.AllenRelation.CONTAINS);
+            sink = allenFilterStepCount(Temporal.precedes);
+            sink = allenFilterStepCount(Temporal.succeeds);
+            sink = allenFilterStepCount(Temporal.overlaps);
+            sink = allenFilterStepCount(Temporal.during);
+            sink = allenFilterStepCount(Temporal.contains);
             sink = g.E().hasLabel("event").temporalBefore(referenceEdge).count().next();
             sink = g.E().hasLabel("event").temporalOverlaps(referenceEdge).count().next();
             sink = g.V().temporalPageRank().count().next();
         }
     }
 
-    private long allenFilterStepCount(AllenFilterStep.AllenRelation relation) {
+    private long allenFilterStepCount(Temporal relation) {
         GraphTraversal<Edge, Edge> traversal = g.E().hasLabel("event");
         traversal.asAdmin().addStep(new AllenFilterStep<>(traversal.asAdmin(), relation, referenceEdge));
         return traversal.count().next();
