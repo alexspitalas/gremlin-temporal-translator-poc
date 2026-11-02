@@ -70,21 +70,22 @@ public class RepresentationAblationBenchmark {
     }
 
     public void run() {
-        System.out.println("======================================================================================================");
-        System.out.println("  T-TINKERPOP VS CHRONOGRAPH REPRESENTATION ABLATION BENCHMARK");
-        System.out.println("  Dynamic String Parsing vs ChronoGraph Objects vs T-TinkerPop Normalized epochMillis");
+        System.out.println("=================================================================================================================");
+        System.out.println("  T-TINKERPOP VS CHRONOGRAPH REPRESENTATION ABLATION BENCHMARK (MULTI-INTERVAL CONSOLIDATED EDGES)");
+        System.out.println("  Dynamic String Parsing vs ChronoGraph Objects vs T-TinkerPop Normalized epochMillis (Traversal & Direct)");
         System.out.println("  Empirically validating Section IV-B(b) pipeline stall elimination");
-        System.out.println("======================================================================================================");
+        System.out.println("=================================================================================================================");
 
-        System.out.printf("%-10s %-18s %15s %15s %15s %12s%n",
-                "Scale |E|", "Operator", "Dynamic String", "ChronoGraph", "T-TinkerPop", "Speedup vs Str");
-        System.out.println("------------------------------------------------------------------------------------------------------");
+        System.out.printf("%-10s %-16s %15s %15s %15s %15s %12s%n",
+                "Events", "Operator", "Dynamic String", "ChronoGraph", "TPop Traversal", "TPop Direct", "Speedup vs Str");
+        System.out.println("-----------------------------------------------------------------------------------------------------------------");
 
         List<AblationResult> results = new ArrayList<>();
 
         for (int size : SIZES) {
             try {
                 initializeGraphs(size);
+                verifyParity(size);
                 warmup();
 
                 int iters = size >= 500000 ? LARGE_BENCHMARK_ITERS : DEFAULT_BENCHMARK_ITERS;
@@ -93,36 +94,36 @@ public class RepresentationAblationBenchmark {
                 double strBefore = measureMs(() -> runDynamicStringFilter("before"), iters);
                 double cgBefore  = measureMs(() -> runChronoGraphFilter(TemporalRelation.isBefore), iters);
                 double normBefore = measureMs(() ->
-                        gNorm.E().hasLabel("event").temporalBefore(normRefEdge).count().next(), iters);
+                        gNorm.E().hasLabel("event").temporalBefore(normRefEdge).with(Temporal.ANY).count().next(), iters);
+                double directBefore = measureMs(() -> runDirectNormalizedFilter(Temporal.precedes), iters);
                 double spBefore = strBefore / Math.max(normBefore, 0.0001);
-                results.add(new AblationResult(size, "temporalBefore", strBefore, cgBefore, normBefore, spBefore));
-                System.out.printf("%-10d %-18s %13.3f ms %13.3f ms %13.3f ms %10.1fx%n",
-                        size, "temporalBefore", strBefore, cgBefore, normBefore, spBefore);
+                results.add(new AblationResult(size, "temporalBefore", strBefore, cgBefore, normBefore, directBefore, spBefore));
+                System.out.printf("%-10d %-16s %13.3f ms %13.3f ms %13.3f ms %13.3f ms %10.1fx%n",
+                        size, "temporalBefore", strBefore, cgBefore, normBefore, directBefore, spBefore);
 
                 // 2. temporalOverlaps
                 double strOverlaps = measureMs(() -> runDynamicStringFilter("overlaps"), iters);
                 double cgOverlaps  = measureMs(() -> runChronoGraphFilter(TemporalRelation.overlapsWith), iters);
                 double normOverlaps = measureMs(() ->
-                        gNorm.E().hasLabel("event").temporalOverlaps(normRefEdge).count().next(), iters);
+                        gNorm.E().hasLabel("event").temporalOverlaps(normRefEdge).with(Temporal.ANY).count().next(), iters);
+                double directOverlaps = measureMs(() -> runDirectNormalizedFilter(Temporal.overlaps), iters);
                 double spOverlaps = strOverlaps / Math.max(normOverlaps, 0.0001);
-                results.add(new AblationResult(size, "temporalOverlaps", strOverlaps, cgOverlaps, normOverlaps, spOverlaps));
-                System.out.printf("%-10d %-18s %13.3f ms %13.3f ms %13.3f ms %10.1fx%n",
-                        size, "temporalOverlaps", strOverlaps, cgOverlaps, normOverlaps, spOverlaps);
+                results.add(new AblationResult(size, "temporalOverlaps", strOverlaps, cgOverlaps, normOverlaps, directOverlaps, spOverlaps));
+                System.out.printf("%-10d %-16s %13.3f ms %13.3f ms %13.3f ms %13.3f ms %10.1fx%n",
+                        size, "temporalOverlaps", strOverlaps, cgOverlaps, normOverlaps, directOverlaps, spOverlaps);
 
                 // 3. during
                 double strDuring = measureMs(() -> runDynamicStringFilter("during"), iters);
                 double cgDuring  = measureMs(() -> runChronoGraphFilter(TemporalRelation.during), iters);
                 double normDuring = measureMs(() ->
-                        gNorm.E().hasLabel("event").asAdmin().addStep(
-                                new org.apache.tinkerpop.gremlin.process.traversal.step.filter.AllenFilterStep<>(
-                                        gNorm.E().hasLabel("event").asAdmin(), Temporal.during, normRefEdge))
-                                .count().next(), iters);
+                        gNorm.E().hasLabel("event").temporalDuring(normRefEdge).with(Temporal.ANY).count().next(), iters);
+                double directDuring = measureMs(() -> runDirectNormalizedFilter(Temporal.during), iters);
                 double spDuring = strDuring / Math.max(normDuring, 0.0001);
-                results.add(new AblationResult(size, "during", strDuring, cgDuring, normDuring, spDuring));
-                System.out.printf("%-10d %-18s %13.3f ms %13.3f ms %13.3f ms %10.1fx%n",
-                        size, "during", strDuring, cgDuring, normDuring, spDuring);
+                results.add(new AblationResult(size, "during", strDuring, cgDuring, normDuring, directDuring, spDuring));
+                System.out.printf("%-10d %-16s %13.3f ms %13.3f ms %13.3f ms %13.3f ms %10.1fx%n",
+                        size, "during", strDuring, cgDuring, normDuring, directDuring, spDuring);
 
-                System.out.println("------------------------------------------------------------------------------------------------------");
+                System.out.println("-----------------------------------------------------------------------------------------------------------------");
             } finally {
                 cleanup();
             }
@@ -140,7 +141,9 @@ public class RepresentationAblationBenchmark {
 
         chronoGraph = new ChronoGraph();
 
-        int numV = Math.max(16, edgeCount / 8);
+        int k = 8;
+        int numEdges = Math.max(16, edgeCount / k);
+        int numV = numEdges + 1;
         Vertex[] normV = new Vertex[numV];
         Vertex[] strV  = new Vertex[numV];
         ChronoVertex[] cgV = new ChronoVertex[numV];
@@ -151,38 +154,86 @@ public class RepresentationAblationBenchmark {
             cgV[i]   = (ChronoVertex) chronoGraph.addVertex("v" + i);
         }
 
-        // Add reference edge
-        normRefEdge = gNorm.addE("event").from(normV[0]).to(normV[1])
-                .lifetime(REF_START_MS, REF_END_MS).next();
+        // Add reference edge with distinct label so target "event" queries do not include it
+        normRefEdge = normV[0].addEdge("refEvent", normV[1]);
+        Lifetime.from(REF_START_MS, REF_END_MS).attachTo(normRefEdge);
 
-        strRefEdge = gStr.addE("event").from(strV[0]).to(strV[1])
-                .property("startTimeStr", REF_START_STR)
-                .property("endTimeStr", REF_END_STR)
-                .next();
+        strRefEdge = strV[0].addEdge("refEvent", strV[1]);
+        strRefEdge.property("intervalsStr", REF_START_STR + "/" + REF_END_STR);
 
-        for (int i = 1; i < edgeCount; i++) {
-            int u = i % numV;
-            int v = (i + 1) % numV;
+        // Add consolidated multi-interval target edges
+        for (int i = 1; i <= numEdges; i++) {
+            int u = i - 1;
+            int v = i;
 
-            long startMs = BASE_TIME + ((i * 17L) % (365 * DAY_MS));
-            long endMs   = startMs + (1L + (i % 20)) * DAY_MS;
+            List<Lifetime.Interval> intervals = new ArrayList<>(k);
 
-            // 1. Normalized graph
-            gNorm.addE("event").from(normV[u]).to(normV[v])
-                    .lifetime(startMs, endMs)
-                    .iterate();
+            for (int j = 0; j < k; j++) {
+                long idx = (long) (i - 1) * k + j;
+                long startMs = BASE_TIME + ((idx * 17L * DAY_MS) % (365 * DAY_MS));
+                long endMs   = startMs + (1L + (idx % 20)) * DAY_MS;
 
-            // 2. String-backed graph
-            String startStr = ISO_FMT.format(Instant.ofEpochMilli(startMs));
-            String endStr   = ISO_FMT.format(Instant.ofEpochMilli(endMs));
-            gStr.addE("event").from(strV[u]).to(strV[v])
-                    .property("startTimeStr", startStr)
-                    .property("endTimeStr", endStr)
-                    .iterate();
+                intervals.add(new Lifetime.Interval(new Date(startMs), new Date(endMs)));
+            }
 
-            // 3. ChronoGraph
+            // 1. Normalized multi-interval edge in T-TinkerPop
+            Edge normE = normV[u].addEdge("event", normV[v]);
+            Lifetime lt = Lifetime.from(intervals);
+            lt.attachTo(normE);
+
+            // 2. String-backed edge & 3. ChronoGraph using the exact same canonical intervals
+            StringBuilder strSb = new StringBuilder();
             ChronoEdge ce = (ChronoEdge) chronoGraph.addEdge(cgV[u], cgV[v], "event");
-            ce.addEvent(new TimePeriod(startMs, endMs));
+            for (int cIdx = 0; cIdx < lt.getIntervalCount(); cIdx++) {
+                long sMs = lt.getStartMillis(cIdx);
+                long eMs = lt.getEndMillis(cIdx);
+                strSb.append(ISO_FMT.format(Instant.ofEpochMilli(sMs)))
+                        .append('/')
+                        .append(ISO_FMT.format(Instant.ofEpochMilli(eMs)))
+                        .append(',');
+                ce.addEvent(new TimePeriod(sMs, eMs));
+            }
+            Edge strE = strV[u].addEdge("event", strV[v]);
+            strE.property("intervalsStr", strSb.toString());
+        }
+    }
+
+    private void verifyParity(int size) {
+        String[][] ops = {
+                {"before", "temporalBefore"},
+                {"overlaps", "temporalOverlaps"},
+                {"during", "during"}
+        };
+        TemporalRelation[] cgRels = {
+                TemporalRelation.isBefore,
+                TemporalRelation.overlapsWith,
+                TemporalRelation.during
+        };
+        Temporal[] tpopRels = {
+                Temporal.precedes,
+                Temporal.overlaps,
+                Temporal.during
+        };
+
+        for (int idx = 0; idx < ops.length; idx++) {
+            String strOp = ops[idx][0];
+            String label = ops[idx][1];
+            long cStr = runDynamicStringFilter(strOp);
+            long cCg = runChronoGraphFilter(cgRels[idx]);
+            long cNormDirect = runDirectNormalizedFilter(tpopRels[idx]);
+            long cNormTrav;
+            if ("before".equals(strOp)) {
+                cNormTrav = gNorm.E().hasLabel("event").temporalBefore(normRefEdge).with(Temporal.ANY).count().next();
+            } else if ("overlaps".equals(strOp)) {
+                cNormTrav = gNorm.E().hasLabel("event").temporalOverlaps(normRefEdge).with(Temporal.ANY).count().next();
+            } else {
+                cNormTrav = gNorm.E().hasLabel("event").temporalDuring(normRefEdge).with(Temporal.ANY).count().next();
+            }
+            if (cStr != cCg || cCg != cNormDirect || cNormDirect != cNormTrav) {
+                throw new IllegalStateException(String.format(
+                        "Parity mismatch at size=%d op=%s: String=%d, ChronoGraph=%d, TPopTrav=%d, TPopDirect=%d",
+                        size, label, cStr, cCg, cNormTrav, cNormDirect));
+            }
         }
     }
 
@@ -195,27 +246,35 @@ public class RepresentationAblationBenchmark {
 
         while (it.hasNext()) {
             Edge e = it.next();
-            if (!e.property("startTimeStr").isPresent()) continue;
+            if (e.equals(strRefEdge)) continue;
+            if (!e.property("intervalsStr").isPresent()) continue;
 
-            String sStr = (String) e.property("startTimeStr").value();
-            String eStr = (String) e.property("endTimeStr").value();
+            String intervalsStr = (String) e.property("intervalsStr").value();
+            String[] pairs = intervalsStr.split(",");
 
-            Date sDate = DatetimeHelper.parse(sStr);
-            Date eDate = DatetimeHelper.parse(eStr);
+            boolean matched = false;
+            for (String pair : pairs) {
+                if (pair.isEmpty()) continue;
+                int slash = pair.indexOf('/');
+                if (slash <= 0) continue;
 
-            boolean match = false;
-            switch (op) {
-                case "before":
-                    match = eDate.before(targetStart);
-                    break;
-                case "overlaps":
-                    match = sDate.before(targetStart) && eDate.after(targetStart) && eDate.before(targetEnd);
-                    break;
-                case "during":
-                    match = sDate.after(targetStart) && eDate.before(targetEnd);
-                    break;
+                Date sDate = DatetimeHelper.parse(pair.substring(0, slash));
+                Date eDate = DatetimeHelper.parse(pair.substring(slash + 1));
+
+                switch (op) {
+                    case "before":
+                        if (eDate.before(targetStart)) matched = true;
+                        break;
+                    case "overlaps":
+                        if (sDate.before(targetStart) && eDate.after(targetStart) && eDate.before(targetEnd)) matched = true;
+                        break;
+                    case "during":
+                        if (sDate.after(targetStart) && eDate.before(targetEnd)) matched = true;
+                        break;
+                }
+                if (matched) break;
             }
-            if (match) matchCount++;
+            if (matched) matchCount++;
         }
         return matchCount;
     }
@@ -232,11 +291,27 @@ public class RepresentationAblationBenchmark {
         return count;
     }
 
+    private long runDirectNormalizedFilter(Temporal rel) {
+        long count = 0;
+        Iterator<Edge> it = normGraph.edges();
+        Lifetime refLt = Lifetime.fromProperties(normRefEdge);
+        while (it.hasNext()) {
+            Edge e = it.next();
+            if (e.equals(normRefEdge)) continue;
+            Lifetime eLt = Lifetime.getLifetimeFromProperties(e);
+            if (eLt != null && !eLt.isEmpty() && rel.test(eLt, refLt, Temporal.Quantifier.ANY)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     private void warmup() {
         for (int i = 0; i < WARMUP_ITERS; i++) {
             sink = runDynamicStringFilter("before");
             sink = runChronoGraphFilter(TemporalRelation.isBefore);
-            sink = gNorm.E().hasLabel("event").temporalBefore(normRefEdge).count().next();
+            sink = gNorm.E().hasLabel("event").temporalBefore(normRefEdge).with(Temporal.ANY).count().next();
+            sink = runDirectNormalizedFilter(Temporal.precedes);
         }
     }
 
@@ -267,16 +342,16 @@ public class RepresentationAblationBenchmark {
     private void printLatexTable(List<AblationResult> results) {
         System.out.println("\n% --- LaTeX Table for Section V Representation Ablation with ChronoGraph ---");
         System.out.println("\\begin{table}[htbp]");
-        System.out.println("\\caption{Representation Ablation: Dynamic String Parsing vs ChronoGraph Objects vs T-TinkerPop Normalized \\texttt{epochMillis} (Runtime in ms).}");
+        System.out.println("\\caption{Representation Ablation on Multi-Interval Consolidated Edges: Dynamic String Parsing vs ChronoGraph Objects vs T-TinkerPop Normalized \\texttt{epochMillis} (Runtime in ms).}");
         System.out.println("\\label{tab:representation-ablation-chronograph}");
         System.out.println("\\centering\\small");
-        System.out.println("\\begin{tabular}{llrrrr}");
+        System.out.println("\\begin{tabular}{llrrrrr}");
         System.out.println("\\toprule");
-        System.out.println("Scale $|E|$ & Operator & Dynamic String (ms) & ChronoGraph (ms) & T-TinkerPop (ms) & Speedup vs String \\\\");
+        System.out.println("Events & Operator & Dynamic String (ms) & ChronoGraph (ms) & TPop Traversal (ms) & TPop Direct (ms) & Speedup vs String \\\\");
         System.out.println("\\midrule");
         for (AblationResult r : results) {
-            System.out.printf("%d & \\texttt{%s} & %.2f & %.2f & %.2f & \\textbf{%.1f$\\times$} \\\\%n",
-                    r.size, r.operator, r.strMs, r.cgMs, r.normMs, r.speedup);
+            System.out.printf("%d & \\texttt{%s} & %.2f & %.2f & %.2f & %.2f & \\textbf{%.1f$\\times$} \\\\%n",
+                    r.size, r.operator, r.strMs, r.cgMs, r.normMs, r.directMs, r.speedup);
         }
         System.out.println("\\bottomrule");
         System.out.println("\\end{tabular}");
@@ -289,14 +364,16 @@ public class RepresentationAblationBenchmark {
         final double strMs;
         final double cgMs;
         final double normMs;
+        final double directMs;
         final double speedup;
 
-        AblationResult(int size, String operator, double strMs, double cgMs, double normMs, double speedup) {
+        AblationResult(int size, String operator, double strMs, double cgMs, double normMs, double directMs, double speedup) {
             this.size = size;
             this.operator = operator;
             this.strMs = strMs;
             this.cgMs = cgMs;
             this.normMs = normMs;
+            this.directMs = directMs;
             this.speedup = speedup;
         }
     }

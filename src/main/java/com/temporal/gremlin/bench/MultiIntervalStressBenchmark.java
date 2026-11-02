@@ -53,9 +53,10 @@ public class MultiIntervalStressBenchmark {
     private GraphTraversalSource g;
     private Edge referenceEdge;
     private List<Lifetime.Interval> refIntervals;
+    private Lifetime refLifetime;
 
     private ChronoGraph chronoGraph;
-    private TimePeriod refPeriod;
+    private List<TimePeriod> refPeriods;
 
     public static void main(String[] args) {
         new MultiIntervalStressBenchmark().run();
@@ -78,6 +79,7 @@ public class MultiIntervalStressBenchmark {
             for (int k : K_VALUES) {
                 try {
                     initializeGraph(edgeCount, k);
+                    verifyParity(edgeCount, k);
                     warmup();
 
                     int iters = edgeCount >= 500000 ? LARGE_BENCHMARK_ITERS : DEFAULT_BENCHMARK_ITERS;
@@ -115,7 +117,7 @@ public class MultiIntervalStressBenchmark {
         g = graph.traversal();
         chronoGraph = new ChronoGraph();
 
-        int numVertices = Math.max(32, edgeCount / 10);
+        int numVertices = edgeCount + 1;
         Vertex[] vertices = new Vertex[numVertices];
         ChronoVertex[] cVertices = new ChronoVertex[numVertices];
 
@@ -124,23 +126,26 @@ public class MultiIntervalStressBenchmark {
             cVertices[i] = (ChronoVertex) chronoGraph.addVertex("v" + i);
         }
 
-        // Reference edge with k disjoint intervals
+        // Reference edge with k disjoint intervals (distinct label so target "event" scans skip it)
         Vertex refOut = vertices[0];
         Vertex refIn = vertices[1];
         refIntervals = generateDisjointIntervals(REF_START, REF_SPAN, k);
-        Lifetime refLt = Lifetime.from(refIntervals);
+        refLifetime = Lifetime.from(refIntervals);
 
-        referenceEdge = g.addE("event").from(refOut).to(refIn)
+        referenceEdge = g.addE("refEvent").from(refOut).to(refIn)
                 .property("ref", true)
                 .next();
-        refLt.attachTo(referenceEdge);
+        refLifetime.attachTo(referenceEdge);
 
-        refPeriod = new TimePeriod(REF_START, REF_START + REF_SPAN);
+        refPeriods = new ArrayList<>(refLifetime.getIntervalCount());
+        for (int idx = 0; idx < refLifetime.getIntervalCount(); idx++) {
+            refPeriods.add(new TimePeriod(refLifetime.getStartMillis(idx), refLifetime.getEndMillis(idx)));
+        }
 
         // Build target edges each with k disjoint intervals
         for (int i = 1; i < edgeCount; i++) {
-            int uIdx = i % numVertices;
-            int vIdx = (i + 1) % numVertices;
+            int uIdx = i;
+            int vIdx = i + 1;
 
             Vertex out = vertices[uIdx];
             Vertex in = vertices[vIdx];
@@ -155,9 +160,23 @@ public class MultiIntervalStressBenchmark {
 
             // 2. ChronoGraph
             ChronoEdge ce = (ChronoEdge) chronoGraph.addEdge(cVertices[uIdx], cVertices[vIdx], "event");
-            for (Lifetime.Interval interval : intervals) {
-                ce.addEvent(new TimePeriod(interval.getStart().getTime(), interval.getEnd().getTime()));
+            for (int idx = 0; idx < lt.getIntervalCount(); idx++) {
+                ce.addEvent(new TimePeriod(lt.getStartMillis(idx), lt.getEndMillis(idx)));
             }
+        }
+    }
+
+    private void verifyParity(int edgeCount, int k) {
+        long anyCount = g.E().hasLabel("event").temporalOverlaps(referenceEdge).with(Temporal.ANY).count().next();
+        long sweepCount = runDirectSweepScan();
+        long cgNatCount = runChronoGraphNatRel();
+        long cgLoopCount = runChronoGraphLoop();
+        long naiveCount = runNaiveCartesianScan();
+
+        if (anyCount != sweepCount || sweepCount != cgNatCount || cgNatCount != cgLoopCount || cgLoopCount != naiveCount) {
+            throw new IllegalStateException(String.format(
+                    "MultiInterval parity mismatch at edgeCount=%d k=%d: TPopANY=%d, Sweep=%d, CGNatRel=%d, CGLoop=%d, Naive=%d",
+                    edgeCount, k, anyCount, sweepCount, cgNatCount, cgLoopCount, naiveCount));
         }
     }
 
@@ -176,9 +195,10 @@ public class MultiIntervalStressBenchmark {
     private long runDirectSweepScan() {
         long count = 0;
         Iterator<Edge> it = graph.edges();
-        Lifetime targetLt = Lifetime.from(refIntervals);
+        Lifetime targetLt = refLifetime;
         while (it.hasNext()) {
             Edge e = it.next();
+            if (e.equals(referenceEdge)) continue;
             Lifetime eLt = Lifetime.getLifetimeFromProperties(e);
             if (eLt == null || eLt.isEmpty()) continue;
             if (Temporal.overlaps.test(eLt, targetLt, Temporal.Quantifier.ANY)) {
@@ -192,26 +212,34 @@ public class MultiIntervalStressBenchmark {
         long count = 0;
         for (com.tinkerpop.blueprints.Edge e : chronoGraph.getEdges()) {
             ChronoEdge ce = (ChronoEdge) e;
-            java.util.NavigableSet<?> matches = ce.getEvents(refPeriod, TemporalRelation.overlapsWith);
-            if (matches != null && !matches.isEmpty()) {
-                count++;
+            boolean matched = false;
+            for (int i = 0, n = refPeriods.size(); i < n; i++) {
+                java.util.NavigableSet<?> matches = ce.getEvents(refPeriods.get(i), TemporalRelation.overlapsWith);
+                if (matches != null && !matches.isEmpty()) {
+                    matched = true;
+                    break;
+                }
             }
+            if (matched) count++;
         }
         return count;
     }
 
     private long runChronoGraphLoop() {
         long count = 0;
-        TimePeriod allTime = new TimePeriod(0L, Long.MAX_VALUE);
+        TimePeriod allTime = new TimePeriod(Long.MIN_VALUE, Long.MAX_VALUE);
         for (com.tinkerpop.blueprints.Edge e : chronoGraph.getEdges()) {
             ChronoEdge ce = (ChronoEdge) e;
             boolean matched = false;
             for (com.tinkerpop.blueprints.Event ev : ce.getEvents(allTime, TemporalRelation.during)) {
                 TimePeriod tp = (TimePeriod) ev.getTime();
-                if (tp.checkTemporalRelation(refPeriod, TemporalRelation.overlapsWith)) {
-                    matched = true;
-                    break;
+                for (int i = 0, n = refPeriods.size(); i < n; i++) {
+                    if (tp.checkTemporalRelation(refPeriods.get(i), TemporalRelation.overlapsWith)) {
+                        matched = true;
+                        break;
+                    }
                 }
+                if (matched) break;
             }
             if (matched) count++;
         }
@@ -223,6 +251,7 @@ public class MultiIntervalStressBenchmark {
         Iterator<Edge> it = graph.edges();
         while (it.hasNext()) {
             Edge e = it.next();
+            if (e.equals(referenceEdge)) continue;
             Lifetime eLt = Lifetime.getLifetimeFromProperties(e);
             if (eLt == null || eLt.isEmpty()) continue;
 
@@ -232,7 +261,9 @@ public class MultiIntervalStressBenchmark {
             boolean overlapsAny = false;
             for (Lifetime.Interval x : xs) {
                 for (Lifetime.Interval y : ys) {
-                    if (x.getStart().before(y.getEnd()) && y.getStart().before(x.getEnd())) {
+                    if (x.getStart().before(y.getStart())
+                            && x.getEnd().after(y.getStart())
+                            && x.getEnd().before(y.getEnd())) {
                         overlapsAny = true;
                         break;
                     }
@@ -272,8 +303,9 @@ public class MultiIntervalStressBenchmark {
         g = null;
         referenceEdge = null;
         refIntervals = null;
+        refLifetime = null;
         chronoGraph = null;
-        refPeriod = null;
+        refPeriods = null;
     }
 
     private void printLatexSnippet(int edgeCount, List<BenchmarkRow> rows) {

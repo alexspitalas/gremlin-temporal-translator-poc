@@ -53,6 +53,7 @@ public class TemporalPageRankBenchmark {
     private TinkerGraph graph;
     private GraphTraversalSource g;
     private ChronoGraph chronoGraph;
+    private Map<String, Edge> routeEdgeMap = new HashMap<>();
 
     public static void main(String[] args) {
         new TemporalPageRankBenchmark().run();
@@ -135,9 +136,14 @@ public class TemporalPageRankBenchmark {
         graph = TinkerGraph.open();
         g = graph.traversal();
         chronoGraph = new ChronoGraph();
+        routeEdgeMap.clear();
 
         Map<String, Vertex> airportMap = new HashMap<>();
         Map<String, ChronoVertex> cgAirportMap = new HashMap<>();
+        Map<String, ChronoEdge> cgRouteEdgeMap = new HashMap<>();
+        Map<String, List<Lifetime.Interval>> routeIntervals = new LinkedHashMap<>();
+        Map<String, String> routeOrigins = new HashMap<>();
+        Map<String, String> routeDests = new HashMap<>();
         int count = 0;
 
         try (BufferedReader br = new BufferedReader(new FileReader(CSV_PATH))) {
@@ -176,22 +182,43 @@ public class TemporalPageRankBenchmark {
                 ChronoVertex cv = cgAirportMap.computeIfAbsent(dest, code ->
                         (ChronoVertex) chronoGraph.addVertex(code));
 
-                Edge e = g.addE("flight").from(u).to(v).property("callsign", parts[0].trim()).next();
-                e.property("startTime", startEpoch);
-                e.property("endTime", endEpoch);
-                Lifetime.from(startEpoch, endEpoch).attachTo(e);
-
-                ChronoEdge ce = (ChronoEdge) chronoGraph.addEdge(cu, cv, "flight");
-                ce.addEvent(new TimePeriod(startEpoch, endEpoch));
+                String routeKey = origin + "->" + dest;
+                routeIntervals.computeIfAbsent(routeKey, k -> new ArrayList<>())
+                        .add(new Lifetime.Interval(new Date(startEpoch), new Date(endEpoch)));
+                routeOrigins.putIfAbsent(routeKey, origin);
+                routeDests.putIfAbsent(routeKey, dest);
 
                 count++;
+            }
+        }
+
+        // Attach canonical coalesced multi-interval lifetimes to consolidated route edges in both engines
+        for (Map.Entry<String, List<Lifetime.Interval>> entry : routeIntervals.entrySet()) {
+            String routeKey = entry.getKey();
+            List<Lifetime.Interval> intervals = entry.getValue();
+            String origin = routeOrigins.get(routeKey);
+            String dest = routeDests.get(routeKey);
+            Vertex u = airportMap.get(origin);
+            Vertex v = airportMap.get(dest);
+
+            Edge e = u.addEdge("flight", v);
+            Lifetime lt = Lifetime.from(intervals);
+            lt.attachTo(e);
+            routeEdgeMap.put(routeKey, e);
+
+            ChronoVertex cu = cgAirportMap.get(origin);
+            ChronoVertex cv = cgAirportMap.get(dest);
+            ChronoEdge ce = (ChronoEdge) chronoGraph.addEdge(cu, cv, "flight");
+            cgRouteEdgeMap.put(routeKey, ce);
+            for (int idx = 0; idx < lt.getIntervalCount(); idx++) {
+                ce.addEvent(new TimePeriod(lt.getStartMillis(idx), lt.getEndMillis(idx)));
             }
         }
     }
 
     private long runChronoGraphTemporalPageRank() {
         // Collect temporal edges from ChronoGraph
-        TimePeriod allTime = new TimePeriod(0L, Long.MAX_VALUE);
+        TimePeriod allTime = new TimePeriod(Long.MIN_VALUE, Long.MAX_VALUE);
         List<TemporalEdge> cgEdges = new ArrayList<>();
 
         for (com.tinkerpop.blueprints.Edge e : chronoGraph.getEdges()) {
@@ -199,14 +226,12 @@ public class TemporalPageRankBenchmark {
             String outId = (String) ce.getVertex(com.tinkerpop.blueprints.Direction.OUT).getId();
             String inId  = (String) ce.getVertex(com.tinkerpop.blueprints.Direction.IN).getId();
 
-            Vertex u = graph.vertices(outId).hasNext() ? graph.vertices(outId).next() : null;
-            Vertex v = graph.vertices(inId).hasNext() ? graph.vertices(inId).next() : null;
-            if (u == null || v == null) continue;
+            Edge base = routeEdgeMap.get(outId + "->" + inId);
+            if (base == null) continue;
 
             for (com.tinkerpop.blueprints.Event ev : ce.getEvents(allTime, TemporalRelation.during)) {
                 TimePeriod tp = (TimePeriod) ev.getTime();
-                Lifetime lt = Lifetime.from(tp.getS(), tp.getF());
-                Edge base = g.V(u).outE("flight").filter(traverser -> traverser.get().inVertex().equals(v)).next();
+                Lifetime lt = Lifetime.from(new Date(tp.getS()), new Date(tp.getF()));
                 cgEdges.add(new TemporalEdge(base, lt));
             }
         }
@@ -241,21 +266,24 @@ public class TemporalPageRankBenchmark {
         graph = null;
         g = null;
         chronoGraph = null;
+        if (routeEdgeMap != null) {
+            routeEdgeMap.clear();
+        }
     }
 
     private void printLatexTable(List<PageRankResult> results) {
         System.out.println("\n% --- LaTeX Table for Section V Algorithmic Benchmark with ChronoGraph ---");
         System.out.println("\\begin{table}[htbp]");
-        System.out.println("\\caption{Algorithmic Benchmark on OpenSky Flights: T-TinkerPop \\texttt{temporalPageRank()} vs ChronoGraph stream vs Static PageRank (20 iterations).}");
+        System.out.println("\\caption{Algorithmic Benchmark on OpenSky Flights: T-TinkerPop \\texttt{temporalPageRank()} (multi-interval consolidated route edges) vs ChronoGraph stream vs Static PageRank (20 iterations).}");
         System.out.println("\\label{tab:temporal-pagerank-chronograph}");
         System.out.println("\\centering\\small");
         System.out.println("\\begin{tabular}{rrrrrrr}");
         System.out.println("\\toprule");
-        System.out.println("Flights $|E|$ & Airports $|V|$ & TPop TPR (ms) & ChronoGraph (ms) & Static PR (ms) & Speedup vs Static \\\\");
+        System.out.println("Flights (Events) & Routes $|E|$ & Airports $|V|$ & TPop TPR (ms) & ChronoGraph (ms) & Static PR (ms) & Speedup vs Static \\\\");
         System.out.println("\\midrule");
         for (PageRankResult r : results) {
-            System.out.printf("%d & %d & %.2f & %.2f & %.2f & \\textbf{%.1f$\\times$} \\\\%n",
-                    r.edges, r.vertices, r.tpopMs, r.cgMs, r.staticMs, r.speedup);
+            System.out.printf("%d & %d & %d & %.2f & %.2f & %.2f & \\textbf{%.1f$\\times$} \\\\%n",
+                    r.limit, r.edges, r.vertices, r.tpopMs, r.cgMs, r.staticMs, r.speedup);
         }
         System.out.println("\\bottomrule");
         System.out.println("\\end{tabular}");

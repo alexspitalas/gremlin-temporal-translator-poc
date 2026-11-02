@@ -75,4 +75,41 @@ public class TemporalPageRankTest {
         // When normalize is true, total rank sums to 1.0
         assertEquals("Normalized temporal PageRank must sum to 1.0", 1.0, totalRank, 0.001);
     }
+
+    @Test
+    public void testTemporalPageRankWithMultiIntervalEdges() {
+        Vertex a = graph.addVertex(T.label, "Airport", "code", "A");
+        Vertex b = graph.addVertex(T.label, "Airport", "code", "B");
+        Vertex c = graph.addVertex(T.label, "Airport", "code", "C");
+
+        // Edge A -> B with MULTIPLE intervals (no duplicate distinct edges!)
+        Lifetime abLifetime = Lifetime.from(100L, 200L).addInterval(400L, 500L);
+        Edge eAB = g.addE("flight").from(a).to(b).next();
+        abLifetime.attachTo(eAB);
+
+        // Edge B -> C with multiple intervals
+        Lifetime bcLifetime = Lifetime.from(250L, 350L).addInterval(550L, 650L);
+        Edge eBC = g.addE("flight").from(b).to(c).next();
+        bcLifetime.attachTo(eBC);
+
+        // Run temporalPageRank
+        List<Vertex> vertices = g.V().temporalPageRank()
+                .with(TemporalPageRank.propertyName, "rank")
+                .with(TemporalPageRank.alpha, 0.85d)
+                .with(TemporalPageRank.beta, 0.5d)
+                .with(TemporalPageRank.normalize, true)
+                .toList();
+
+        assertEquals(3, vertices.size());
+
+        double totalRank = 0.0;
+        for (Vertex v : vertices) {
+            assertTrue("Vertex must have assigned rank property", v.property("rank").isPresent());
+            double rank = ((Number) v.property("rank").value()).doubleValue();
+            assertTrue("Rank must be positive", rank > 0.0);
+            totalRank += rank;
+        }
+
+        assertEquals("Normalized temporal PageRank must sum to 1.0", 1.0, totalRank, 0.001);
+    }
 }

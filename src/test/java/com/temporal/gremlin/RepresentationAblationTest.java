@@ -1,10 +1,12 @@
 package com.temporal.gremlin;
 
+import org.apache.tinkerpop.gremlin.process.traversal.Temporal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.T;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.apache.tinkerpop.gremlin.structure.temporal.Lifetime;
 import org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerGraph;
 import org.apache.tinkerpop.gremlin.util.DatetimeHelper;
 import org.junit.After;
@@ -82,5 +84,30 @@ public class RepresentationAblationTest {
 
         long beforeCount = g.E(e).temporalBefore(refEdge).count().next();
         assertEquals(1L, beforeCount);
+    }
+
+    @Test
+    public void testDynamicParseMatchesNormalizedEpochMillisWithMultiInterval() {
+        Vertex v1 = graph.addVertex(T.label, "entity", "id", 10);
+        Vertex v2 = graph.addVertex(T.label, "entity", "id", 20);
+
+        long s1 = 1000L, e1 = 2000L;
+        long s2 = 4000L, e2 = 5000L;
+
+        String intervalStr = "1000/2000,4000/5000";
+
+        // Add edge with multi-interval lifetime
+        Lifetime lt = Lifetime.from(s1, e1).addInterval(s2, e2);
+        Edge edge = g.addE("event").from(v1).to(v2)
+                .property("intervalsStr", intervalStr)
+                .next();
+        lt.attachTo(edge);
+
+        assertEquals(2, Lifetime.fromProperties(edge).getIntervals().size());
+
+        // Verify temporalOverlaps with reference [1500, 2500] under ANY quantifier
+        Edge ref = g.addE("ref").from(v1).to(v2).lifetime(1500L, 2500L).next();
+        long count = g.E(edge).temporalOverlaps(ref).with(Temporal.ANY).count().next();
+        assertEquals(1L, count);
     }
 }
