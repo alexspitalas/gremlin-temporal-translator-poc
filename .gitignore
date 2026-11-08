@@ -39,5 +39,10 @@ target/
 # Data
 *.csv
 
+# Benchmark results
+results/*.txt
+results/*.md
+!results/.gitkeep
+
 # Dependencies from other repos
 chronograph-practice/

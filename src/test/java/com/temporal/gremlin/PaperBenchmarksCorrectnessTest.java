@@ -1,5 +1,6 @@
 package com.temporal.gremlin;
 
+import com.temporal.gremlin.util.DatasetResolver;
 import com.tinkerpop.blueprints.TimeInstant;
 import com.tinkerpop.blueprints.TimePeriod;
 import org.apache.tinkerpop.gremlin.process.computer.search.path.TemporalPathTarget;
@@ -46,20 +47,25 @@ import static org.junit.Assert.*;
  *  - Table VIII(RepresentationAblationBenchmark: 3 operators x 4 representations)
  *  - Table IX  (MultiIntervalStressBenchmark: k in {1, 2, 5, 10} x 6 columns)
  *  - Table X   (TemporalPageRankBenchmark: TPop TPR vs CG Extract+TPR vs Static PR)
+ *  - Table VI  (ChronoGraphBenchmark: OpenSky Temporal BFS & temporalBefore across 5 modes)
+ *  - Table VII (IndexSelectivityTradeoffBenchmark: 0.01% to 75% selectivity across 5 modes)
+ *  - Table VIII(RepresentationAblationBenchmark: Dynamic String vs ChronoGraph vs TPop Traversal & Direct)
+ *  - Table IX  (MultiIntervalStressBenchmark: k in {1, 2, 5, 10} across 6 modes)
+ *  - Table X   (TemporalPageRankBenchmark: TPop TPR vs ChronoGraph TPR vs Static PR)
  *  - Table XI  (TTinkerPopCapabilitiesScalingBenchmark: Ligozat, Historical Views, Path Targets)
  */
 public class PaperBenchmarksCorrectnessTest {
 
-    private static final String CSV_PATH = "datasets/flightlist_20190101_20190131.csv";
+    private static final String CSV_PATH = DatasetResolver.resolveFlightCsv().getAbsolutePath();
     private static final DateTimeFormatter CSV_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssXXX");
     private static final DateTimeFormatter ISO_FMT = DateTimeFormatter.ISO_INSTANT;
 
     // =========================================================================
-    // 1. TABLE V: ChronoGraphBenchmark (temporalBefore 5 columns & tBFS 2 columns)
+    // 1. TABLE VI (tab:chronograph-comparison): ChronoGraphBenchmark (temporalBefore 5 columns & tBFS 2 columns)
     // =========================================================================
 
     @Test
-    public void testTableV_ChronoGraphBenchmarkAllColumnsParity() throws Exception {
+    public void testTableVI_ChronoGraphBenchmarkAllColumnsParity() throws Exception {
         File csv = new File(CSV_PATH);
         assertTrue("OpenSky dataset must exist at " + CSV_PATH, csv.exists());
 
@@ -191,10 +197,10 @@ public class PaperBenchmarksCorrectnessTest {
                 .temporalBefore(refLt).with(Temporal.ANY).count().next();
 
         assertTrue("temporalBefore match count should be positive", tpopDirectCount > 0);
-        assertEquals("Table V: CG Loop vs CG NatRel must match", cgLoopCount, cgNatRelCount);
-        assertEquals("Table V: CG NatRel vs TPop Direct must match", cgNatRelCount, tpopDirectCount);
-        assertEquals("Table V: TPop Direct vs TPop Unindexed must match", tpopDirectCount, tpopUnindexedCount);
-        assertEquals("Table V: TPop Direct vs TPop Indexed must match", tpopDirectCount, tpopIndexedCount);
+        assertEquals("Table VI: CG Loop vs CG NatRel must match", cgLoopCount, cgNatRelCount);
+        assertEquals("Table VI: CG NatRel vs TPop Direct must match", cgNatRelCount, tpopDirectCount);
+        assertEquals("Table VI: TPop Direct vs TPop Unindexed must match", tpopDirectCount, tpopUnindexedCount);
+        assertEquals("Table VI: TPop Direct vs TPop Indexed must match", tpopDirectCount, tpopIndexedCount);
 
         // --- B. Validate Macro-benchmark (Temporal BFS) ---
         String hubCode = outDeg.entrySet().stream()
@@ -327,16 +333,15 @@ public class PaperBenchmarksCorrectnessTest {
     }
 
     // =========================================================================
-    // 2. TABLE VI: IndexSelectivityTradeoffBenchmark (8 selectivities x 5 columns)
+    // 2. TABLE VII (tab:index-selectivity-tradeoff): IndexSelectivityTradeoffBenchmark (8 selectivities x 5 columns)
     // =========================================================================
 
     @Test
-    public void testTableVI_IndexSelectivityTradeoffAllColumnsParity() {
+    public void testTableVII_IndexSelectivityTradeoffAllColumnsParity() {
         int numEdges = 5_000;
         int intervalsPerEdge = 3;
         long timelineStart = 1_546_300_800_000L;
-        long timelineSpan = 365L * 24 * 3600 * 1000L;
-        long edgeDuration = 10_000L;
+        long stepSpan = 100_000L;
         double[] selectivities = {0.0001, 0.001, 0.01, 0.05, 0.10, 0.25, 0.50, 0.75};
 
         TinkerGraph unindexedGraph = TinkerGraph.open();
@@ -351,14 +356,12 @@ public class PaperBenchmarksCorrectnessTest {
         ChronoVertex cU = (ChronoVertex) chronoGraph.addVertex("u");
 
         for (int i = 0; i < numEdges; i++) {
-            double frac = (i + 0.5) / numEdges;
-            long baseStart = timelineStart + (long) (frac * timelineSpan);
             List<Lifetime.Interval> ivs = new ArrayList<>(intervalsPerEdge);
-            for (int j = 0; j < intervalsPerEdge; j++) {
-                long s = baseStart + j * (edgeDuration * 2);
-                long e = s + edgeDuration;
-                ivs.add(new Lifetime.Interval(s, e));
-            }
+            ivs.add(new Lifetime.Interval(timelineStart - 50_000L, timelineStart - 40_000L));
+            ivs.add(new Lifetime.Interval(timelineStart - 30_000L, timelineStart - 20_000L));
+            long s3 = timelineStart + i;
+            long e3 = timelineStart + numEdges + (long) (numEdges - i) * stepSpan;
+            ivs.add(new Lifetime.Interval(s3, e3));
             Lifetime lt = Lifetime.from(ivs);
 
             Edge e1 = uU.addEdge("event", vU);
@@ -379,9 +382,9 @@ public class PaperBenchmarksCorrectnessTest {
         TimePeriod allTime = new TimePeriod(Long.MIN_VALUE, Long.MAX_VALUE);
 
         for (double sel : selectivities) {
-            long querySpan = Math.max(edgeDuration * 2, (long) (sel * timelineSpan));
-            long queryStart = timelineStart + (timelineSpan - querySpan) / 2;
-            long queryEnd = queryStart + querySpan;
+            int targetMatches = Math.max(1, (int) Math.round(numEdges * sel));
+            long queryStart = timelineStart + numEdges + (long) (numEdges - targetMatches) * stepSpan + (stepSpan / 2);
+            long queryEnd = timelineStart + numEdges + (long) (numEdges + 1) * stepSpan;
 
             Lifetime refLt = Lifetime.from(queryStart, queryEnd);
             TimePeriod refPeriod = new TimePeriod(queryStart, queryEnd);
@@ -426,10 +429,11 @@ public class PaperBenchmarksCorrectnessTest {
                 if (matched) cgLoopCount++;
             }
 
-            assertEquals("Table VI (sel=" + sel + "): Indexed vs Unindexed", unindexedCount, indexedCount);
-            assertEquals("Table VI (sel=" + sel + "): Direct vs Unindexed", directCount, unindexedCount);
-            assertEquals("Table VI (sel=" + sel + "): CG NatRel vs Direct", cgNatCount, directCount);
-            assertEquals("Table VI (sel=" + sel + "): CG Loop vs Direct", cgLoopCount, directCount);
+            assertTrue("Table VII (sel=" + sel + "): Matched count must be positive", indexedCount > 0);
+            assertEquals("Table VII (sel=" + sel + "): Indexed vs Unindexed", unindexedCount, indexedCount);
+            assertEquals("Table VII (sel=" + sel + "): Direct vs Unindexed", directCount, unindexedCount);
+            assertEquals("Table VII (sel=" + sel + "): CG NatRel vs Direct", cgNatCount, directCount);
+            assertEquals("Table VII (sel=" + sel + "): CG Loop vs Direct", cgLoopCount, directCount);
         }
 
         unindexedGraph.close();

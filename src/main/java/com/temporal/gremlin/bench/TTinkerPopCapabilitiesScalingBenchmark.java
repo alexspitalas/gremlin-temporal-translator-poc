@@ -1,5 +1,9 @@
 package com.temporal.gremlin.bench;
 
+import com.temporal.gremlin.benchmark.BenchmarkContext;
+import com.temporal.gremlin.benchmark.BenchmarkGroup;
+import com.temporal.gremlin.benchmark.BenchmarkTask;
+import com.temporal.gremlin.benchmark.ScaleMode;
 import org.apache.tinkerpop.gremlin.process.computer.search.path.TemporalPathTarget;
 import org.apache.tinkerpop.gremlin.process.traversal.Temporal;
 import org.apache.tinkerpop.gremlin.process.traversal.TemporalP;
@@ -24,11 +28,35 @@ import java.util.function.LongSupplier;
  * 3) Temporal Path-Finding Optimality Criteria: tbfs(EARLIEST_ARRIVAL, EARLIEST_DEPARTURE, LATEST_DEPARTURE, LATEST_ARRIVAL)
  *    and bounded-waiting-time multi-hop journeys sequentialPath(minDelay, maxDelay).
  */
-public class TTinkerPopCapabilitiesScalingBenchmark {
+public class TTinkerPopCapabilitiesScalingBenchmark implements BenchmarkTask {
 
     private static final int[] GRAPH_SIZES = {10_000, 50_000, 100_000, 500_000, 1_000_000};
+    private static final int[] QUICK_GRAPH_SIZES = {5000, 20000};
     private static final int WARMUP_ITERS  = 4;
     private static final int MEASURE_ITERS = 8;
+
+    @Override
+    public String getId() {
+        return "capabilities";
+    }
+
+    @Override
+    public String getName() {
+        return "Table XI (tab:ttinkerpop-unique-scaling): Scaling of T-TinkerPop Unique Capabilities";
+    }
+
+    @Override
+    public String getDescription() {
+        return "Evaluates Ligozat (p,q)-calculus, historical subgraph views, and temporal path optimality criteria.";
+    }
+
+    @Override
+    public BenchmarkGroup getGroup() {
+        return BenchmarkGroup.PAPER;
+    }
+
+    private static int currentWarmupIters = WARMUP_ITERS;
+    private static int currentMeasureIters = MEASURE_ITERS;
 
     private static final long BASE_TIME = 1_700_000_000_000L;
     private static final long TIME_SPAN = 86_400_000L * 30; // 30 days in ms
@@ -89,19 +117,37 @@ public class TTinkerPopCapabilitiesScalingBenchmark {
     }
 
     public static void main(String[] args) {
-        System.out.println("================================================================================================================");
-        System.out.println("  T-TINKERPOP CAPABILITIES SCALING BENCHMARK (LIGOAT CALCULUS, HISTORICAL VIEWS, TEMPORAL PATH TARGETS)");
-        System.out.println("================================================================================================================");
+        new TTinkerPopCapabilitiesScalingBenchmark().run();
+    }
+
+    @Override
+    public void run(BenchmarkContext ctx) {
+        if (ctx == null) {
+            ctx = new BenchmarkContext(null, ScaleMode.FULL, null, -1, -1, null);
+        }
+
+        currentWarmupIters = ctx.getWarmupIterations(WARMUP_ITERS);
+        currentMeasureIters = ctx.getIterations(MEASURE_ITERS);
+
+        int[] sizes = ctx.getSizes(getId(), GRAPH_SIZES, QUICK_GRAPH_SIZES);
+
+        ctx.println("================================================================================================================");
+        ctx.println("  T-TINKERPOP CAPABILITIES SCALING BENCHMARK (LIGOAT CALCULUS, HISTORICAL VIEWS, TEMPORAL PATH TARGETS)");
+        ctx.println("================================================================================================================");
 
         List<LigozatRow> ligozatRows = new ArrayList<>();
         List<ViewRow> viewRows       = new ArrayList<>();
         List<PathRow> pathRows       = new ArrayList<>();
 
-        for (int numEdges : GRAPH_SIZES) {
+        for (int numEdges : sizes) {
             runForSize(numEdges, ligozatRows, viewRows, pathRows);
         }
 
         printLaTeXTables(ligozatRows, viewRows, pathRows);
+    }
+
+    public void run() {
+        run(new BenchmarkContext(null, ScaleMode.FULL, null, -1, -1, null));
     }
 
     private static void runForSize(int numEdges,
@@ -177,7 +223,7 @@ public class TTinkerPopCapabilitiesScalingBenchmark {
         }
 
         // Warmup Suite A
-        for (int i = 0; i < WARMUP_ITERS; i++) {
+        for (int i = 0; i < currentWarmupIters; i++) {
             g.E().hasLabel("event").temporalOverlaps(refSingle).with(Temporal.ANY).count().next();
             g.E().hasLabel("event").has(Lifetime.TEMPORAL_INTERVALS, TemporalP.between(Temporal.precedes, Temporal.overlaps, refSingle).any()).count().next();
             g.E().hasLabel("event").has(Lifetime.TEMPORAL_INTERVALS, TemporalP.generalized(refMulti2, rel44)).count().next();
@@ -211,7 +257,7 @@ public class TTinkerPopCapabilitiesScalingBenchmark {
             throw new IllegalStateException("Window view parity mismatch: window=" + winHopCount + ", manual=" + manualHopCount);
         }
 
-        for (int i = 0; i < WARMUP_ITERS; i++) {
+        for (int i = 0; i < currentWarmupIters; i++) {
             g.V().atTime(snapInstant).out("event").count().next();
             g.V().window(winStart, winEnd).out("event").count().next();
             g.V().temporalIntersects(winLt).outE("event").temporalIntersects(winLt).inV().temporalIntersects(winLt).count().next();
@@ -231,7 +277,7 @@ public class TTinkerPopCapabilitiesScalingBenchmark {
         for (int i = 0; i < seqSeeds.length; i++) seqSeeds[i] = vertices[i].id();
 
         long deadline = BASE_TIME + TIME_SPAN;
-        for (int i = 0; i < WARMUP_ITERS; i++) {
+        for (int i = 0; i < currentWarmupIters; i++) {
             g.V(src).tbfs(TemporalPathTarget.EARLIEST_ARRIVAL, BASE_TIME).next();
             g.V(src).tbfs(TemporalPathTarget.EARLIEST_DEPARTURE, BASE_TIME).next();
             g.V(src).tbfs(TemporalPathTarget.LATEST_DEPARTURE, deadline).next();
@@ -256,13 +302,13 @@ public class TTinkerPopCapabilitiesScalingBenchmark {
 
     private static double measureMs(LongSupplier op) {
         long totalNanos = 0L;
-        for (int i = 0; i < MEASURE_ITERS; i++) {
+        for (int i = 0; i < currentMeasureIters; i++) {
             long t0 = System.nanoTime();
             long res = op.getAsLong();
             if (res < 0) throw new IllegalStateException();
             totalNanos += (System.nanoTime() - t0);
         }
-        return (totalNanos / (double) MEASURE_ITERS) / 1_000_000.0;
+        return (totalNanos / (double) currentMeasureIters) / 1_000_000.0;
     }
 
     private static void printLaTeXTables(List<LigozatRow> ligozatRows, List<ViewRow> viewRows, List<PathRow> pathRows) {

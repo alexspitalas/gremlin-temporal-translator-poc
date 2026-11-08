@@ -1,5 +1,6 @@
 package com.temporal.gremlin;
 
+import com.temporal.gremlin.util.DatasetResolver;
 import com.tinkerpop.blueprints.TimeInstant;
 import com.tinkerpop.blueprints.TimePeriod;
 import org.apache.tinkerpop.gremlin.process.computer.search.path.TemporalPathTarget;
@@ -270,7 +271,7 @@ public class ChronoGraphParityTest {
 
     @Test
     public void testOpenSkyDatasetCorrectnessParityAcrossOperatorsAndPageRank() throws Exception {
-        File csv = new File("datasets/flightlist_20190101_20190131.csv");
+        File csv = DatasetResolver.resolveFlightCsv();
         if (!csv.exists()) {
             return;
         }

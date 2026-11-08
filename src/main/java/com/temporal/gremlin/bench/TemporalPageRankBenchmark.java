@@ -1,5 +1,10 @@
 package com.temporal.gremlin.bench;
 
+import com.temporal.gremlin.benchmark.BenchmarkContext;
+import com.temporal.gremlin.benchmark.BenchmarkGroup;
+import com.temporal.gremlin.benchmark.BenchmarkTask;
+import com.temporal.gremlin.benchmark.ScaleMode;
+import com.temporal.gremlin.util.DatasetResolver;
 import com.tinkerpop.blueprints.TimePeriod;
 import org.apache.tinkerpop.gremlin.process.computer.ComputerResult;
 import org.apache.tinkerpop.gremlin.process.computer.ranking.pagerank.PageRankVertexProgram;
@@ -35,7 +40,7 @@ import java.util.function.LongSupplier;
  *
  * Evaluated on the OpenSky Network real-world flight dataset.
  */
-public class TemporalPageRankBenchmark {
+public class TemporalPageRankBenchmark implements BenchmarkTask {
 
     private static final int WARMUP_ITERS = 2;
     private static final int DEFAULT_BENCHMARK_ITERS = 5;
@@ -43,12 +48,37 @@ public class TemporalPageRankBenchmark {
     private static final int STATIC_PR_ITERATIONS = 20;
 
     private static final int[] FLIGHT_SIZES = {50000, 100000, 250000, 500000, 1000000};
-    private static final String CSV_PATH = "datasets/flightlist_20190101_20190131.csv";
+    private static final int[] QUICK_SIZES = {5000, 20000};
+
+    @Override
+    public String getId() {
+        return "pagerank";
+    }
+
+    @Override
+    public String getName() {
+        return "Table X (tab:temporal-pagerank-chronograph): Temporal PageRank on OpenSky";
+    }
+
+    @Override
+    public String getDescription() {
+        return "Compares T-TinkerPop stream TPR vs ChronoGraph stream TPR vs Static TinkerPop PageRank on OpenSky.";
+    }
+
+    @Override
+    public BenchmarkGroup getGroup() {
+        return BenchmarkGroup.PAPER;
+    }
 
     private static final DateTimeFormatter CSV_FMT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssXXX");
 
     private static volatile Object sink;
+
+    private File currentCsvFile;
+    private int currentWarmupIters = WARMUP_ITERS;
+    private int currentDefaultIters = DEFAULT_BENCHMARK_ITERS;
+    private int currentLargeIters = LARGE_BENCHMARK_ITERS;
 
     private TinkerGraph graph;
     private GraphTraversalSource g;
@@ -59,33 +89,41 @@ public class TemporalPageRankBenchmark {
         new TemporalPageRankBenchmark().run();
     }
 
-    public void run() {
-        System.out.println("==========================================================================================================");
-        System.out.println("  T-TINKERPOP VS CHRONOGRAPH ALGORITHMIC BENCHMARK: TEMPORAL PAGERANK ON OPENSKY FLIGHTS");
-        System.out.println("  T-TinkerPop temporalPageRank() vs ChronoGraph Stream vs Static PageRank (Aggregated Window)");
-        System.out.println("==========================================================================================================");
-
-        File csvFile = new File(CSV_PATH);
-        if (!csvFile.exists()) {
-            System.err.println("Error: CSV file not found at " + CSV_PATH);
-            return;
+    @Override
+    public void run(BenchmarkContext ctx) {
+        if (ctx == null) {
+            ctx = new BenchmarkContext(null, ScaleMode.FULL, null, -1, -1, null);
         }
 
-        System.out.printf("%-10s %-9s %-9s %16s %16s %16s %10s%n",
+        this.currentCsvFile = ctx.getDatasetFile();
+        this.currentWarmupIters = ctx.getWarmupIterations(WARMUP_ITERS);
+        this.currentDefaultIters = ctx.getIterations(DEFAULT_BENCHMARK_ITERS);
+        this.currentLargeIters = ctx.getIterations(LARGE_BENCHMARK_ITERS);
+
+        int[] sizes = ctx.getSizes(getId(), FLIGHT_SIZES, QUICK_SIZES);
+
+        ctx.println("==========================================================================================================");
+        ctx.println("  T-TINKERPOP VS CHRONOGRAPH ALGORITHMIC BENCHMARK: TEMPORAL PAGERANK ON OPENSKY FLIGHTS");
+        ctx.println("  T-TinkerPop temporalPageRank() vs ChronoGraph Stream vs Static PageRank (Aggregated Window)");
+        ctx.println("  Dataset: " + currentCsvFile.getAbsolutePath());
+        ctx.println("==========================================================================================================");
+
+        ctx.printf("%-10s %-9s %-9s %16s %16s %16s %10s%n",
                 "Flights", "Airports", "Edges", "TPop TPR (ms)", "ChronoGraph (ms)", "Static PR (ms)", "Speedup");
-        System.out.println("----------------------------------------------------------------------------------------------------------");
+        ctx.println("----------------------------------------------------------------------------------------------------------");
 
         List<PageRankResult> results = new ArrayList<>();
 
-        for (int limit : FLIGHT_SIZES) {
+        for (int limit : sizes) {
             try {
                 loadDataset(limit);
                 int vertexCount = g.V().count().next().intValue();
                 int edgeCount   = g.E().count().next().intValue();
 
+                verifyParity(limit);
                 warmup();
 
-                int iters = limit >= 500000 ? LARGE_BENCHMARK_ITERS : DEFAULT_BENCHMARK_ITERS;
+                int iters = limit >= 500000 ? currentLargeIters : currentDefaultIters;
 
                 // 1. T-TinkerPop Native Temporal PageRank
                 double tpopMs = measureMs(() -> {
@@ -132,7 +170,14 @@ public class TemporalPageRankBenchmark {
         printLatexTable(results);
     }
 
+    public void run() {
+        run(new BenchmarkContext(null, ScaleMode.FULL, null, -1, -1, null));
+    }
+
     private void loadDataset(int limit) throws Exception {
+        if (currentCsvFile == null) {
+            currentCsvFile = DatasetResolver.resolveFlightCsv();
+        }
         graph = TinkerGraph.open();
         g = graph.traversal();
         chronoGraph = new ChronoGraph();
@@ -146,7 +191,7 @@ public class TemporalPageRankBenchmark {
         Map<String, String> routeDests = new HashMap<>();
         int count = 0;
 
-        try (BufferedReader br = new BufferedReader(new FileReader(CSV_PATH))) {
+        try (BufferedReader br = new BufferedReader(new FileReader(currentCsvFile))) {
             String header = br.readLine();
             String line;
             while ((line = br.readLine()) != null && count < limit) {
@@ -155,7 +200,7 @@ public class TemporalPageRankBenchmark {
 
                 String origin = parts[5].trim();
                 String dest   = parts[6].trim();
-                if (origin.isEmpty() || dest.isEmpty()) continue;
+                if (origin.isEmpty() || dest.isEmpty() || origin.equals(dest)) continue;
 
                 String firstSeenStr = parts[7].trim();
                 String lastSeenStr  = parts[8].trim();
@@ -241,8 +286,49 @@ public class TemporalPageRankBenchmark {
         return rank.size();
     }
 
+    private void verifyParity(int limit) {
+        long tpopCount = g.V().temporalPageRank()
+                .with(TemporalPageRank.propertyName, "tpr")
+                .with(TemporalPageRank.alpha, 0.85d)
+                .with(TemporalPageRank.beta, 0.5d)
+                .with(TemporalPageRank.normalize, true)
+                .count().next();
+
+        TimePeriod allTime = new TimePeriod(Long.MIN_VALUE, Long.MAX_VALUE);
+        List<TemporalEdge> cgEdges = new ArrayList<>();
+        for (com.tinkerpop.blueprints.Edge e : chronoGraph.getEdges()) {
+            ChronoEdge ce = (ChronoEdge) e;
+            String outId = (String) ce.getVertex(com.tinkerpop.blueprints.Direction.OUT).getId();
+            String inId  = (String) ce.getVertex(com.tinkerpop.blueprints.Direction.IN).getId();
+            Edge base = routeEdgeMap.get(outId + "->" + inId);
+            if (base == null) continue;
+            for (com.tinkerpop.blueprints.Event ev : ce.getEvents(allTime, TemporalRelation.during)) {
+                TimePeriod tp = (TimePeriod) ev.getTime();
+                cgEdges.add(new TemporalEdge(base, Lifetime.from(new Date(tp.getS()), new Date(tp.getF()))));
+            }
+        }
+        Map<Object, Double> cgRanks = TemporalPageRankAlgorithm.execute(cgEdges, 0.85d, 0.5d, true);
+
+        if (tpopCount != cgRanks.size()) {
+            throw new IllegalStateException(String.format(
+                    "TemporalPageRank vertex count mismatch at limit=%d: TPop=%d, ChronoGraph=%d",
+                    limit, tpopCount, cgRanks.size()));
+        }
+        Iterator<Vertex> vIt = graph.vertices();
+        while (vIt.hasNext()) {
+            Vertex v = vIt.next();
+            double tpopScore = ((Number) v.value("tpr")).doubleValue();
+            double cgScore = cgRanks.getOrDefault(v.id(), 0.0);
+            if (Math.abs(tpopScore - cgScore) > 1e-12) {
+                throw new IllegalStateException(String.format(
+                        "TemporalPageRank score mismatch on airport %s at limit=%d: TPop=%.15f, ChronoGraph=%.15f",
+                        v.value("code"), limit, tpopScore, cgScore));
+            }
+        }
+    }
+
     private void warmup() {
-        for (int i = 0; i < WARMUP_ITERS; i++) {
+        for (int i = 0; i < currentWarmupIters; i++) {
             g.V().temporalPageRank()
                     .with(TemporalPageRank.alpha, 0.85d)
                     .with(TemporalPageRank.beta, 0.5d)

@@ -1,5 +1,9 @@
 package com.temporal.gremlin.bench;
 
+import com.temporal.gremlin.benchmark.BenchmarkContext;
+import com.temporal.gremlin.benchmark.BenchmarkGroup;
+import com.temporal.gremlin.benchmark.BenchmarkTask;
+import com.temporal.gremlin.benchmark.ScaleMode;
 import org.apache.tinkerpop.gremlin.process.traversal.Temporal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversal;
 import org.apache.tinkerpop.gremlin.process.traversal.step.filter.AllenFilterStep;
@@ -33,12 +37,37 @@ import java.util.function.LongSupplier;
  * strings make that path look artificially good. Date-backed lifetime storage should help AllenFilterStep-style
  * parse-on-read paths more than the AllenStep has()+P baseline.
  */
-public class TemporalLifetimeStorageBenchmark {
+public class TemporalLifetimeStorageBenchmark implements BenchmarkTask {
 
     private static final int WARMUP_ITERATIONS = 5;
     private static final int BENCHMARK_ITERATIONS = 30;
     private static final int MUTATION_ITERATIONS = 1000;
     private static final int[] SIZES = {1000, 5000, 10000, 50000, 100000, 250000, 500000, 1000000};
+    private static final int[] QUICK_SIZES = {1000, 5000, 20000};
+
+    @Override
+    public String getId() {
+        return "lifetime-storage";
+    }
+
+    @Override
+    public String getName() {
+        return "Temporal Lifetime Storage & In-Memory Representation";
+    }
+
+    @Override
+    public String getDescription() {
+        return "Measures read and write latency across various lifetime() storage representations.";
+    }
+
+    @Override
+    public BenchmarkGroup getGroup() {
+        return BenchmarkGroup.MICRO;
+    }
+
+    private int currentWarmupIters = WARMUP_ITERATIONS;
+    private int currentBenchmarkIters = BENCHMARK_ITERATIONS;
+    private int currentMutationIters = MUTATION_ITERATIONS;
 
     private static final long DAY = 24L * 60L * 60L * 1000L;
     private static final int OFFSET_WINDOW_DAYS = 3650;
@@ -73,26 +102,41 @@ public class TemporalLifetimeStorageBenchmark {
         new TemporalLifetimeStorageBenchmark().run();
     }
 
-    public void run() {
-        System.out.println();
-        System.out.println("============================================================");
-        System.out.println("  TEMPORAL LIFETIME STORAGE BENCHMARK");
-        System.out.println("============================================================");
-        System.out.println("Creates temporal edges only through lifetime().");
-        System.out.println();
-        System.out.println("How to read the tables:");
-        System.out.println("  MAIN     AllenFilterStep parse-on-read path. This is the key read benchmark.");
-        System.out.println("  BASELINE AllenStep public DSL has()+P path. P.lt/P.gt do not parse strings.");
-        System.out.println("  OTHER    temporalPageRank, another parse-on-read path.");
-        System.out.println("  WRITE    lifetime() write-time normalization cost.");
+    @Override
+    public void run(BenchmarkContext ctx) {
+        if (ctx == null) {
+            ctx = new BenchmarkContext(null, ScaleMode.FULL, null, -1, -1, null);
+        }
+
+        this.currentWarmupIters = ctx.getWarmupIterations(WARMUP_ITERATIONS);
+        this.currentBenchmarkIters = ctx.getIterations(BENCHMARK_ITERATIONS);
+        this.currentMutationIters = ctx.getIterations(MUTATION_ITERATIONS);
+
+        int[] sizes = ctx.getSizes(getId(), SIZES, QUICK_SIZES);
+
+        ctx.println();
+        ctx.println("============================================================");
+        ctx.println("  TEMPORAL LIFETIME STORAGE BENCHMARK");
+        ctx.println("============================================================");
+        ctx.println("Creates temporal edges only through lifetime().");
+        ctx.println();
+        ctx.println("How to read the tables:");
+        ctx.println("  MAIN     AllenFilterStep parse-on-read path. This is the key read benchmark.");
+        ctx.println("  BASELINE AllenStep public DSL has()+P path. P.lt/P.gt do not parse strings.");
+        ctx.println("  OTHER    temporalPageRank, another parse-on-read path.");
+        ctx.println("  WRITE    lifetime() write-time normalization cost.");
 
         runMixedFormatCorrectnessCheck();
 
-        for (int size : SIZES) {
+        for (int size : sizes) {
             runReadBenchmarks(size);
         }
 
         runMutationBenchmark();
+    }
+
+    public void run() {
+        run(new BenchmarkContext(null, ScaleMode.FULL, null, -1, -1, null));
     }
 
     private void runReadBenchmarks(int edgeCount) {
@@ -172,7 +216,7 @@ public class TemporalLifetimeStorageBenchmark {
     }
 
     private void warmupReadBenchmarks() {
-        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+        for (int i = 0; i < currentWarmupIters; i++) {
             sink = allenFilterStepCount(Temporal.precedes);
             sink = allenFilterStepCount(Temporal.succeeds);
             sink = allenFilterStepCount(Temporal.overlaps);
@@ -199,13 +243,13 @@ public class TemporalLifetimeStorageBenchmark {
         long resultCount = operation.getAsLong();
         long totalTime = 0L;
 
-        for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+        for (int i = 0; i < currentBenchmarkIters; i++) {
             long start = System.nanoTime();
             sink = operation.getAsLong();
             totalTime += System.nanoTime() - start;
         }
 
-        double avgMs = totalTime / (1_000_000.0 * BENCHMARK_ITERATIONS);
+        double avgMs = totalTime / (1_000_000.0 * currentBenchmarkIters);
         System.out.printf("%-9s %-18s %-10s %12.3f %12d%n", role, path, operationName, avgMs, resultCount);
     }
 
@@ -220,7 +264,7 @@ public class TemporalLifetimeStorageBenchmark {
         Vertex out = graph.addVertex(T.label, "eventVertex", "name", "out");
         Vertex in = graph.addVertex(T.label, "eventVertex", "name", "in");
 
-        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+        for (int i = 0; i < currentWarmupIters; i++) {
             sink = g.V(out).as("a").V(in).as("b")
                     .addE("event").from("a").to("b")
                     .lifetime("2024-01-15T12:00:00", "2024-01-25T12:00:00")
@@ -228,7 +272,7 @@ public class TemporalLifetimeStorageBenchmark {
         }
 
         long totalTime = 0L;
-        for (int i = 0; i < MUTATION_ITERATIONS; i++) {
+        for (int i = 0; i < currentMutationIters; i++) {
             long start = System.nanoTime();
             sink = g.V(out).as("a").V(in).as("b")
                     .addE("event").from("a").to("b")
@@ -237,7 +281,7 @@ public class TemporalLifetimeStorageBenchmark {
             totalTime += System.nanoTime() - start;
         }
 
-        double avgMs = totalTime / (1_000_000.0 * MUTATION_ITERATIONS);
+        double avgMs = totalTime / (1_000_000.0 * currentMutationIters);
         System.out.printf("%-24s %12s%n", "Operation", "Avg ms/op");
         System.out.println("-------------------------------------");
         System.out.printf("%-24s %12.3f%n", "addE().lifetime()", avgMs);

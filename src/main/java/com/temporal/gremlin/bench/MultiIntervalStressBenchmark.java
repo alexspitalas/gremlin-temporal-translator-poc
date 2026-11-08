@@ -1,5 +1,9 @@
 package com.temporal.gremlin.bench;
 
+import com.temporal.gremlin.benchmark.BenchmarkContext;
+import com.temporal.gremlin.benchmark.BenchmarkGroup;
+import com.temporal.gremlin.benchmark.BenchmarkTask;
+import com.temporal.gremlin.benchmark.ScaleMode;
 import com.tinkerpop.blueprints.TimePeriod;
 import org.apache.tinkerpop.gremlin.process.traversal.Temporal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
@@ -34,14 +38,40 @@ import java.util.function.LongSupplier;
  *   5. ChronoGraph Direct Loop: manual event iteration
  *   6. Naive Cartesian Product: O(k^2) brute force
  */
-public class MultiIntervalStressBenchmark {
+public class MultiIntervalStressBenchmark implements BenchmarkTask {
 
     private static final int WARMUP_ITERS = 3;
     private static final int DEFAULT_BENCHMARK_ITERS = 10;
     private static final int LARGE_BENCHMARK_ITERS = 5;
 
     private static final int[] EDGE_COUNTS = {50000, 100000, 500000, 1000000};
+    private static final int[] QUICK_EDGE_COUNTS = {5000, 20000};
     private static final int[] K_VALUES = {1, 2, 5, 10};
+    private static final int[] QUICK_K_VALUES = {1, 2, 5};
+
+    @Override
+    public String getId() {
+        return "multi-interval";
+    }
+
+    @Override
+    public String getName() {
+        return "Table IX (tab:multi-interval-chronograph): Multi-Interval Traversal Scalability (k=1..10)";
+    }
+
+    @Override
+    public String getDescription() {
+        return "Evaluates scaling with k disjoint intervals across ANY, ALL, plane-sweep, and ChronoGraph.";
+    }
+
+    @Override
+    public BenchmarkGroup getGroup() {
+        return BenchmarkGroup.PAPER;
+    }
+
+    private int currentWarmupIters = WARMUP_ITERS;
+    private int currentDefaultIters = DEFAULT_BENCHMARK_ITERS;
+    private int currentLargeIters = LARGE_BENCHMARK_ITERS;
 
     private static final long DAY_MS = 86_400_000L;
     private static final long REF_START = 1_000_000L;
@@ -62,13 +92,25 @@ public class MultiIntervalStressBenchmark {
         new MultiIntervalStressBenchmark().run();
     }
 
-    public void run() {
-        System.out.println("==========================================================================================================");
-        System.out.println("  T-TINKERPOP VS CHRONOGRAPH MULTI-INTERVAL STRESS TEST (k in {1, 2, 5, 10})");
-        System.out.println("  Evaluating multi-interval scaling: T-TinkerPop (ANY/ALL) vs ChronoGraph (NatRel/Loop) vs Naive O(k^2)");
-        System.out.println("==========================================================================================================");
+    @Override
+    public void run(BenchmarkContext ctx) {
+        if (ctx == null) {
+            ctx = new BenchmarkContext(null, ScaleMode.FULL, null, -1, -1, null);
+        }
 
-        for (int edgeCount : EDGE_COUNTS) {
+        this.currentWarmupIters = ctx.getWarmupIterations(WARMUP_ITERS);
+        this.currentDefaultIters = ctx.getIterations(DEFAULT_BENCHMARK_ITERS);
+        this.currentLargeIters = ctx.getIterations(LARGE_BENCHMARK_ITERS);
+
+        int[] edgeCounts = ctx.getSizes(getId(), EDGE_COUNTS, QUICK_EDGE_COUNTS);
+        int[] kValues = (ctx.getScale() == ScaleMode.QUICK) ? QUICK_K_VALUES : K_VALUES;
+
+        ctx.println("==========================================================================================================");
+        ctx.println("  T-TINKERPOP VS CHRONOGRAPH MULTI-INTERVAL STRESS TEST (k in {1, 2, 5, 10})");
+        ctx.println("  Evaluating multi-interval scaling: T-TinkerPop (ANY/ALL) vs ChronoGraph (NatRel/Loop) vs Naive O(k^2)");
+        ctx.println("==========================================================================================================");
+
+        for (int edgeCount : edgeCounts) {
             System.out.printf("%n=== Graph Size: %d edges ===%n", edgeCount);
             System.out.println("┌──────┬──────────────────┬──────────────────┬──────────────────┬──────────────────┬──────────────────┬─────────────────┐");
             System.out.println("│  k   │  TPop ANY (ms)   │  TPop ALL (ms)   │ TPop Sweep (ms)  │   CG NatRel (ms) │   CG Loop (ms)   │  Naive O(k^2) ms│");
@@ -76,13 +118,13 @@ public class MultiIntervalStressBenchmark {
 
             List<BenchmarkRow> rows = new ArrayList<>();
 
-            for (int k : K_VALUES) {
+            for (int k : kValues) {
                 try {
                     initializeGraph(edgeCount, k);
                     verifyParity(edgeCount, k);
                     warmup();
 
-                    int iters = edgeCount >= 500000 ? LARGE_BENCHMARK_ITERS : DEFAULT_BENCHMARK_ITERS;
+                    int iters = edgeCount >= 500000 ? currentLargeIters : currentDefaultIters;
 
                     double anyMs = measureAverageMs(() ->
                             g.E().hasLabel("event").temporalOverlaps(referenceEdge).with(Temporal.ANY).count().next(), iters);
@@ -110,6 +152,10 @@ public class MultiIntervalStressBenchmark {
 
             printLatexSnippet(edgeCount, rows);
         }
+    }
+
+    public void run() {
+        run(new BenchmarkContext(null, ScaleMode.FULL, null, -1, -1, null));
     }
 
     private void initializeGraph(int edgeCount, int k) {
@@ -276,7 +322,7 @@ public class MultiIntervalStressBenchmark {
     }
 
     private void warmup() {
-        for (int i = 0; i < WARMUP_ITERS; i++) {
+        for (int i = 0; i < currentWarmupIters; i++) {
             sink = g.E().hasLabel("event").temporalOverlaps(referenceEdge).with(Temporal.ANY).count().next();
             sink = g.E().hasLabel("event").temporalOverlaps(referenceEdge).with(Temporal.ALL).count().next();
             sink = runDirectSweepScan();
