@@ -103,9 +103,53 @@ mvn test
 
 ---
 
-## 3. Running All Paper Benchmarks
+## 3. Running Benchmarks: Unified Suite & CLI
 
-Each benchmark class in `src/main/java/com/temporal/gremlin/bench/` can be executed directly via Maven:
+You can run benchmarks using the new **unified benchmark suite runner (`./bench.sh`)**, through an **interactive CLI menu**, or directly via Maven.
+
+### A. Interactive CLI Menu (`./bench.sh`)
+
+Simply run:
+
+```bash
+./bench.sh
+```
+
+This opens an interactive menu that lets you choose:
+1. **What to run**: Full Paper Suite (Default), Grouped Suites (Macro/Micro/Translator), Single Benchmarks, or Correctness Tests.
+2. **Dataset Configuration**: Default OpenSky flight dataset or any custom CSV path.
+3. **Workload Scale**: Full Journal Paper Scale (Default) or Quick Smoke-Test Scale (~30s).
+4. **Output Destination**: Console + Save to `results/` (`.txt` and `.md` reports), custom file path, or console only.
+
+> **Tip:** Hitting `<Enter>` on each prompt selects the sensible default (Full Paper Reproduction Suite with OpenSky dataset saving to `results/`).
+
+### B. Command-Line Arguments Mode
+
+Run non-interactively with CLI arguments:
+
+```bash
+# 1. Run full paper benchmark suite (Tables V–XI) with default settings
+./bench.sh --mode=bench --suite=paper
+
+# 2. Fast smoke-test evaluation across paper benchmarks (~30 seconds)
+./bench.sh --mode=bench --suite=paper --scale=quick
+
+# 3. Run all 17 automated cross-engine parity tests
+./bench.sh --mode=test --test-suite=all
+
+# 4. Run full correctness verification first, followed by benchmarks
+./bench.sh --mode=both --suite=paper
+
+# 5. Run a single specific benchmark with custom dataset and output path
+./bench.sh --target=chronograph --dataset=/path/to/my_flights.csv --output=results/custom_run.txt
+
+# 6. List all available benchmark groups, tasks, tests, and demos
+./bench.sh --list
+```
+
+### C. Individual Maven Class Invocations (Backward Compatible)
+
+Existing single-class Maven executions continue to work identically:
 
 ```bash
 # 1. Table V: OpenSky ChronoGraph vs. T-TinkerPop (tBFS & temporalBefore across 5 execution modes)

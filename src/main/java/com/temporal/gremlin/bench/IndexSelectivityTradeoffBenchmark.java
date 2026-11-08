@@ -1,5 +1,9 @@
 package com.temporal.gremlin.bench;
 
+import com.temporal.gremlin.benchmark.BenchmarkContext;
+import com.temporal.gremlin.benchmark.BenchmarkGroup;
+import com.temporal.gremlin.benchmark.BenchmarkTask;
+import com.temporal.gremlin.benchmark.ScaleMode;
 import com.tinkerpop.blueprints.TimePeriod;
 import org.apache.tinkerpop.gremlin.process.traversal.Temporal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
@@ -35,12 +39,38 @@ import java.util.function.LongSupplier;
  *        traverser/iterator overhead relative to raw storage iteration (TPop Direct) when
  *        a high fraction of edges pass the filter and must be wrapped as DefaultTraversers.
  */
-public class IndexSelectivityTradeoffBenchmark {
+public class IndexSelectivityTradeoffBenchmark implements BenchmarkTask {
 
     private static final int WARMUP_ITERS = 3;
     private static final int BENCHMARK_ITERS = 10;
     private static final int QUERY_GRAPH_SIZE = 500_000;
     private static final int[] INGESTION_SIZES = {50_000, 100_000, 500_000};
+    private static final int[] QUICK_INGESTION_SIZES = {5000, 20000};
+
+    @Override
+    public String getId() {
+        return "index-selectivity";
+    }
+
+    @Override
+    public String getName() {
+        return "Table VI: Index Selectivity Crossover & Ingestion Overhead";
+    }
+
+    @Override
+    public String getDescription() {
+        return "Compares ingestion write penalty and query selectivity crossover across 0.01% to 75% on 500k edges.";
+    }
+
+    @Override
+    public BenchmarkGroup getGroup() {
+        return BenchmarkGroup.PAPER;
+    }
+
+    private int currentWarmupIters = WARMUP_ITERS;
+    private int currentBenchmarkIters = BENCHMARK_ITERS;
+    private int currentQueryGraphSize = QUERY_GRAPH_SIZE;
+    private int[] currentIngestionSizes = INGESTION_SIZES;
 
     // Total timeline: [0, 1_000_000_000L]. Edge i has interval [i * 2000L, i * 2000L + 1000L).
     private static final long STEP_MS = 2_000L;
@@ -55,13 +85,36 @@ public class IndexSelectivityTradeoffBenchmark {
         new IndexSelectivityTradeoffBenchmark().run();
     }
 
-    public void run() {
-        System.out.println("========================================================================================================================");
-        System.out.println("  T-TINKERPOP STRENGTHS & WEAKNESSES: INDEX INGESTION OVERHEAD & SELECTIVITY CROSSOVER BENCHMARK");
-        System.out.println("========================================================================================================================");
+    @Override
+    public void run(BenchmarkContext ctx) {
+        if (ctx == null) {
+            ctx = new BenchmarkContext(null, ScaleMode.FULL, null, -1, -1, null);
+        }
+
+        this.currentWarmupIters = ctx.getWarmupIterations(WARMUP_ITERS);
+        this.currentBenchmarkIters = ctx.getIterations(BENCHMARK_ITERS);
+
+        if (ctx.getScale() == ScaleMode.QUICK) {
+            this.currentIngestionSizes = QUICK_INGESTION_SIZES;
+            this.currentQueryGraphSize = 20_000;
+        } else if (ctx.getScale() == ScaleMode.CUSTOM && ctx.getCustomSizes() != null && ctx.getCustomSizes().length > 0) {
+            this.currentIngestionSizes = ctx.getCustomSizes();
+            this.currentQueryGraphSize = ctx.getCustomSizes()[ctx.getCustomSizes().length - 1];
+        } else {
+            this.currentIngestionSizes = INGESTION_SIZES;
+            this.currentQueryGraphSize = QUERY_GRAPH_SIZE;
+        }
+
+        ctx.println("========================================================================================================================");
+        ctx.println("  T-TINKERPOP STRENGTHS & WEAKNESSES: INDEX INGESTION OVERHEAD & SELECTIVITY CROSSOVER BENCHMARK");
+        ctx.println("========================================================================================================================");
 
         runIngestionBenchmark();
         runSelectivityCrossoverBenchmark();
+    }
+
+    public void run() {
+        run(new BenchmarkContext(null, ScaleMode.FULL, null, -1, -1, null));
     }
 
     private void runIngestionBenchmark() {
@@ -70,12 +123,12 @@ public class IndexSelectivityTradeoffBenchmark {
                 "Edges", "TPop Unindexed", "TPop Indexed", "ChronoGraph", "Index Write Cost");
         System.out.println("-".repeat(90));
 
-        for (int n : INGESTION_SIZES) {
+        for (int n : currentIngestionSizes) {
             // Warmup once at small scale
-            if (n == INGESTION_SIZES[0]) {
-                buildUnindexedGraph(10_000).close();
-                buildIndexedGraph(10_000).close();
-                buildChronoGraph(10_000);
+            if (n == currentIngestionSizes[0]) {
+                buildUnindexedGraph(Math.min(10_000, n)).close();
+                buildIndexedGraph(Math.min(10_000, n)).close();
+                buildChronoGraph(Math.min(10_000, n));
             }
 
             long t0 = System.nanoTime();
@@ -99,14 +152,14 @@ public class IndexSelectivityTradeoffBenchmark {
     }
 
     private void runSelectivityCrossoverBenchmark() {
-        System.out.println("\n--- Part 2: Query Selectivity Crossover on " + QUERY_GRAPH_SIZE + " Edges (Operator: temporalDuring) ---");
+        System.out.println("\n--- Part 2: Query Selectivity Crossover on " + currentQueryGraphSize + " Edges (Operator: temporalDuring) ---");
         System.out.printf("%-12s %12s %15s %15s %15s %15s %16s%n",
                 "Selectivity", "Matches", "TPop Indexed", "TPop Unindexed", "TPop Direct", "CG NatRel", "Idx vs Unidx");
         System.out.println("-".repeat(108));
 
-        TinkerGraph unindexedGraph = buildUnindexedGraph(QUERY_GRAPH_SIZE);
-        TinkerGraph indexedGraph = buildIndexedGraph(QUERY_GRAPH_SIZE);
-        ChronoGraph chronoGraph = buildChronoGraph(QUERY_GRAPH_SIZE);
+        TinkerGraph unindexedGraph = buildUnindexedGraph(currentQueryGraphSize);
+        TinkerGraph indexedGraph = buildIndexedGraph(currentQueryGraphSize);
+        ChronoGraph chronoGraph = buildChronoGraph(currentQueryGraphSize);
 
         GraphTraversalSource gUnindexed = unindexedGraph.traversal();
         GraphTraversalSource gIndexed = indexedGraph.traversal();
@@ -121,7 +174,7 @@ public class IndexSelectivityTradeoffBenchmark {
                 double frac = SELECTIVITY_FRACTIONS[sIdx];
                 String label = SELECTIVITY_LABELS[sIdx];
 
-                int targetMatches = Math.max(1, (int) Math.round(QUERY_GRAPH_SIZE * frac));
+                int targetMatches = Math.max(1, (int) Math.round(currentQueryGraphSize * frac));
                 // Edge i has [i * 2000, i * 2000 + 1000).
                 // For strictly 'during' [winStart, winEnd), we need edgeStart > winStart and edgeEnd < winEnd.
                 // Choose winStart = -1L (so edge 0 starting at 0 has 0 > -1) and winEnd = (targetMatches - 1) * 2000 + 1001.
@@ -146,17 +199,17 @@ public class IndexSelectivityTradeoffBenchmark {
                 }
 
                 // Warmup
-                for (int w = 0; w < WARMUP_ITERS; w++) {
+                for (int w = 0; w < currentWarmupIters; w++) {
                     sink = gIndexed.E().hasLabel("event").temporalDuring(refE2).count().next();
                     sink = gUnindexed.E().hasLabel("event").temporalDuring(refE1).count().next();
                     sink = countDirect(unindexedGraph, refLt, Temporal.during);
                     sink = countChronoGraph(chronoGraph, refPeriod, TemporalRelation.during);
                 }
 
-                double idxMs = measureMs(() -> gIndexed.E().hasLabel("event").temporalDuring(refE2).count().next(), BENCHMARK_ITERS);
-                double unidxMs = measureMs(() -> gUnindexed.E().hasLabel("event").temporalDuring(refE1).count().next(), BENCHMARK_ITERS);
-                double directMs = measureMs(() -> countDirect(unindexedGraph, refLt, Temporal.during), BENCHMARK_ITERS);
-                double cgMs = measureMs(() -> countChronoGraph(chronoGraph, refPeriod, TemporalRelation.during), BENCHMARK_ITERS);
+                double idxMs = measureMs(() -> gIndexed.E().hasLabel("event").temporalDuring(refE2).count().next(), currentBenchmarkIters);
+                double unidxMs = measureMs(() -> gUnindexed.E().hasLabel("event").temporalDuring(refE1).count().next(), currentBenchmarkIters);
+                double directMs = measureMs(() -> countDirect(unindexedGraph, refLt, Temporal.during), currentBenchmarkIters);
+                double cgMs = measureMs(() -> countChronoGraph(chronoGraph, refPeriod, TemporalRelation.during), currentBenchmarkIters);
 
                 double speedup = unidxMs / Math.max(idxMs, 0.0001);
                 System.out.printf("%-12s %12d %12.3f ms %12.3f ms %12.3f ms %12.3f ms %15.2fx%n",

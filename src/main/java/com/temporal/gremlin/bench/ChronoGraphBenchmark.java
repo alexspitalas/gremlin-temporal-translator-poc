@@ -1,5 +1,10 @@
 package com.temporal.gremlin.bench;
 
+import com.temporal.gremlin.benchmark.BenchmarkContext;
+import com.temporal.gremlin.benchmark.BenchmarkGroup;
+import com.temporal.gremlin.benchmark.BenchmarkTask;
+import com.temporal.gremlin.benchmark.ScaleMode;
+import com.temporal.gremlin.util.DatasetResolver;
 import com.tinkerpop.blueprints.TimeInstant;
 import com.tinkerpop.blueprints.TimePeriod;
 import org.apache.tinkerpop.gremlin.process.computer.search.path.TemporalPathTarget;
@@ -20,6 +25,7 @@ import org.dfpl.chronograph.crud.memory.ChronoGraph;
 import org.dfpl.chronograph.crud.memory.ChronoVertex;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileReader;
 import java.lang.reflect.Field;
 import java.time.OffsetDateTime;
@@ -38,15 +44,38 @@ import java.util.*;
  *      - T-TinkerPop Unindexed (folded Gremlin traversal scan)
  *      - T-TinkerPop Indexed (automated TemporalTinkerIndex IntervalTree pushdown)
  */
-public class ChronoGraphBenchmark {
+public class ChronoGraphBenchmark implements BenchmarkTask {
 
     private static final int WARMUP_ITERATIONS = 3;
     private static final int BFS_ITERATIONS = 10;
     private static final int OP_ITERATIONS = 50;
-    private static final String CSV_PATH = "datasets/flightlist_20190101_20190131.csv";
-
     private static final int[] SIZES = {10000, 50000, 100000, 500000, 1114885};
-    private static final String[] LABELS = {"10k", "50k", "100k", "500k", "1.1M"};
+    private static final int[] QUICK_SIZES = {5000, 20000};
+
+    @Override
+    public String getId() {
+        return "chronograph";
+    }
+
+    @Override
+    public String getName() {
+        return "Table V: OpenSky ChronoGraph vs T-TinkerPop (tBFS & Operators)";
+    }
+
+    @Override
+    public String getDescription() {
+        return "Compares Temporal BFS reachability and Allen operators across 5 execution modes on the OpenSky flight dataset.";
+    }
+
+    @Override
+    public BenchmarkGroup getGroup() {
+        return BenchmarkGroup.PAPER;
+    }
+
+    private int currentWarmupIters = WARMUP_ITERATIONS;
+    private int currentBfsIters = BFS_ITERATIONS;
+    private int currentOpIters = OP_ITERATIONS;
+    private File currentCsvFile;
 
     private TinkerGraph unindexedGraph;
     private GraphTraversalSource gUnindexed;
@@ -65,15 +94,33 @@ public class ChronoGraphBenchmark {
         new ChronoGraphBenchmark().run();
     }
 
-    public void run() {
-        System.out.println("\n========================================================================================================================");
-        System.out.println("  CHRONOGRAPH VS T-TINKERPOP SCALABILITY BENCHMARK (OPEN-SKY FLIGHT WORKLOADS)");
-        System.out.println("  Comparing Temporal BFS and Allen Operators (CG Loop, CG NatRel, TPop Direct, TPop Unindexed, TPop Indexed)");
-        System.out.println("========================================================================================================================");
-
-        for (int i = 0; i < SIZES.length; i++) {
-            runForSize(SIZES[i], LABELS[i]);
+    @Override
+    public void run(BenchmarkContext ctx) {
+        if (ctx == null) {
+            ctx = new BenchmarkContext(null, ScaleMode.FULL, null, -1, -1, null);
         }
+
+        this.currentCsvFile = ctx.getDatasetFile();
+        this.currentWarmupIters = ctx.getWarmupIterations(WARMUP_ITERATIONS);
+        this.currentBfsIters = ctx.getIterations(BFS_ITERATIONS);
+        this.currentOpIters = ctx.getIterations(OP_ITERATIONS);
+
+        int[] sizes = ctx.getSizes(getId(), SIZES, QUICK_SIZES);
+
+        ctx.println("\n========================================================================================================================");
+        ctx.println("  CHRONOGRAPH VS T-TINKERPOP SCALABILITY BENCHMARK (OPEN-SKY FLIGHT WORKLOADS)");
+        ctx.println("  Comparing Temporal BFS and Allen Operators (CG Loop, CG NatRel, TPop Direct, TPop Unindexed, TPop Indexed)");
+        ctx.println("  Dataset: " + currentCsvFile.getAbsolutePath());
+        ctx.println("========================================================================================================================");
+
+        for (int size : sizes) {
+            String label = size >= 1000000 ? String.format("%.1fM", size / 1000000.0) : (size / 1000) + "k";
+            runForSize(size, label);
+        }
+    }
+
+    public void run() {
+        run(new BenchmarkContext(null, ScaleMode.FULL, null, -1, -1, null));
     }
 
     private void runForSize(int size, String label) {
@@ -96,6 +143,9 @@ public class ChronoGraphBenchmark {
     }
 
     private void initializeGraphs(int limit) throws Exception {
+        if (currentCsvFile == null) {
+            currentCsvFile = DatasetResolver.resolveFlightCsv(null);
+        }
         unindexedGraph = TinkerGraph.open();
         gUnindexed = unindexedGraph.traversal();
 
@@ -115,7 +165,7 @@ public class ChronoGraphBenchmark {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssXXX");
 
         int count = 0;
-        try (BufferedReader br = new BufferedReader(new FileReader(CSV_PATH))) {
+        try (BufferedReader br = new BufferedReader(new FileReader(currentCsvFile))) {
             br.readLine(); // skip header
             String line;
             while ((line = br.readLine()) != null && count < limit) {
@@ -235,7 +285,7 @@ public class ChronoGraphBenchmark {
 
     private void warmup() {
         if (tSource == null) return;
-        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+        for (int i = 0; i < currentWarmupIters; i++) {
             new TemporalBreadthFirstSearch().compute(cSource, new TimeInstant(0L), "flight");
             gUnindexed.V(tSource).tbfs(0L, TemporalPathTarget.EARLIEST_ARRIVAL, Direction.OUT, "flight").next();
             gUnindexed.V(tSource).tbfs(0L, TemporalPathTarget.EARLIEST_DEPARTURE, Direction.OUT, "flight").next();
@@ -251,36 +301,36 @@ public class ChronoGraphBenchmark {
 
         long cgNanos = 0L;
         int cgReachable = 0;
-        for (int i = 0; i < BFS_ITERATIONS; i++) {
+        for (int i = 0; i < currentBfsIters; i++) {
             TemporalBreadthFirstSearch tbfs = new TemporalBreadthFirstSearch();
             long s = System.nanoTime();
             tbfs.compute(cSource, new TimeInstant(0L), "flight");
             cgNanos += (System.nanoTime() - s);
             if (i == 0) cgReachable = getChronoCount(tbfs) - 1; // exclude source vertex itself
         }
-        double cgMs = cgNanos / (1_000_000.0 * BFS_ITERATIONS);
+        double cgMs = cgNanos / (1_000_000.0 * currentBfsIters);
 
         long arrNanos = 0L;
         int arrReachable = 0;
-        for (int i = 0; i < BFS_ITERATIONS; i++) {
+        for (int i = 0; i < currentBfsIters; i++) {
             long s = System.nanoTime();
             Map<Vertex, Long> res = gUnindexed.V(tSource)
                     .tbfs(0L, TemporalPathTarget.EARLIEST_ARRIVAL, Direction.OUT, "flight").next();
             arrNanos += (System.nanoTime() - s);
             if (i == 0) arrReachable = res.size();
         }
-        double arrMs = arrNanos / (1_000_000.0 * BFS_ITERATIONS);
+        double arrMs = arrNanos / (1_000_000.0 * currentBfsIters);
 
         long depNanos = 0L;
         int depReachable = 0;
-        for (int i = 0; i < BFS_ITERATIONS; i++) {
+        for (int i = 0; i < currentBfsIters; i++) {
             long s = System.nanoTime();
             Map<Vertex, Long> res = gUnindexed.V(tSource)
                     .tbfs(0L, TemporalPathTarget.EARLIEST_DEPARTURE, Direction.OUT, "flight").next();
             depNanos += (System.nanoTime() - s);
             if (i == 0) depReachable = res.size();
         }
-        double depMs = depNanos / (1_000_000.0 * BFS_ITERATIONS);
+        double depMs = depNanos / (1_000_000.0 * currentBfsIters);
 
         System.out.println("\n--- Temporal BFS Performance ---");
         System.out.printf("%-26s %14s %14s %14s%n", "Implementation", "Time (ms)", "Reachable", "Speedup vs CG");
@@ -291,7 +341,7 @@ public class ChronoGraphBenchmark {
     }
 
     private void runOperatorBenchmarks(String label) {
-        System.out.println("\n--- Temporal Operator Performance (" + OP_ITERATIONS + " iterations) ---");
+        System.out.println("\n--- Temporal Operator Performance (" + currentOpIters + " iterations) ---");
         System.out.printf("%-18s %13s %13s %13s %15s %15s %12s%n",
                 "Operator", "CG Loop", "CG NatRel", "TPop Direct", "TPop Unindexed", "TPop Indexed", "Matches");
         System.out.println("-".repeat(106));
@@ -308,7 +358,7 @@ public class ChronoGraphBenchmark {
         long idxNanos = 0L;
         long matches = 0L;
 
-        for (int i = 0; i < OP_ITERATIONS; i++) {
+        for (int i = 0; i < currentOpIters; i++) {
             long s = System.nanoTime();
             matches = countChronoGraphLoop(cgRel);
             loopNanos += (System.nanoTime() - s);
@@ -338,7 +388,7 @@ public class ChronoGraphBenchmark {
             idxNanos += (System.nanoTime() - s);
         }
 
-        double div = 1_000_000.0 * OP_ITERATIONS;
+        double div = 1_000_000.0 * currentOpIters;
         System.out.printf("%-18s %10.3f ms %10.3f ms %10.3f ms %12.3f ms %12.3f ms %12d%n",
                 opName, loopNanos / div, natNanos / div, directNanos / div, unidxNanos / div, idxNanos / div, matches);
     }

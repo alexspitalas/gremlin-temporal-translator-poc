@@ -1,5 +1,9 @@
 package com.temporal.gremlin.bench;
 
+import com.temporal.gremlin.benchmark.BenchmarkContext;
+import com.temporal.gremlin.benchmark.BenchmarkGroup;
+import com.temporal.gremlin.benchmark.BenchmarkTask;
+import com.temporal.gremlin.benchmark.ScaleMode;
 import com.tinkerpop.blueprints.TimePeriod;
 import org.apache.tinkerpop.gremlin.process.traversal.Temporal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
@@ -34,13 +38,38 @@ import java.util.function.LongSupplier;
  *   3. T-TinkerPop Normalized epochMillis: timestamps normalized once at ingestion
  *      into Lifetime / epochMillis long arrays, evaluated via numeric operations.
  */
-public class RepresentationAblationBenchmark {
+public class RepresentationAblationBenchmark implements BenchmarkTask {
 
     private static final int WARMUP_ITERS = 2;
     private static final int DEFAULT_BENCHMARK_ITERS = 10;
     private static final int LARGE_BENCHMARK_ITERS = 5;
 
     private static final int[] SIZES = {50000, 100000, 500000, 1000000};
+    private static final int[] QUICK_SIZES = {5000, 20000};
+
+    @Override
+    public String getId() {
+        return "representation-ablation";
+    }
+
+    @Override
+    public String getName() {
+        return "Table VIII: Representation Ablation (String vs CG vs TPop)";
+    }
+
+    @Override
+    public String getDescription() {
+        return "Compares dynamic ISO-8601 string parsing vs ChronoGraph objects vs TPop normalized epochMillis.";
+    }
+
+    @Override
+    public BenchmarkGroup getGroup() {
+        return BenchmarkGroup.PAPER;
+    }
+
+    private int currentWarmupIters = WARMUP_ITERS;
+    private int currentDefaultIters = DEFAULT_BENCHMARK_ITERS;
+    private int currentLargeIters = LARGE_BENCHMARK_ITERS;
 
     private static final long DAY_MS = 86_400_000L;
     private static final long BASE_TIME = Instant.parse("2024-01-01T00:00:00Z").toEpochMilli();
@@ -69,26 +98,37 @@ public class RepresentationAblationBenchmark {
         new RepresentationAblationBenchmark().run();
     }
 
-    public void run() {
-        System.out.println("=================================================================================================================");
-        System.out.println("  T-TINKERPOP VS CHRONOGRAPH REPRESENTATION ABLATION BENCHMARK (MULTI-INTERVAL CONSOLIDATED EDGES)");
-        System.out.println("  Dynamic String Parsing vs ChronoGraph Objects vs T-TinkerPop Normalized epochMillis (Traversal & Direct)");
-        System.out.println("  Empirically validating Section IV-B(b) pipeline stall elimination");
-        System.out.println("=================================================================================================================");
+    @Override
+    public void run(BenchmarkContext ctx) {
+        if (ctx == null) {
+            ctx = new BenchmarkContext(null, ScaleMode.FULL, null, -1, -1, null);
+        }
 
-        System.out.printf("%-10s %-16s %15s %15s %15s %15s %12s%n",
+        this.currentWarmupIters = ctx.getWarmupIterations(WARMUP_ITERS);
+        this.currentDefaultIters = ctx.getIterations(DEFAULT_BENCHMARK_ITERS);
+        this.currentLargeIters = ctx.getIterations(LARGE_BENCHMARK_ITERS);
+
+        int[] sizes = ctx.getSizes(getId(), SIZES, QUICK_SIZES);
+
+        ctx.println("=================================================================================================================");
+        ctx.println("  T-TINKERPOP VS CHRONOGRAPH REPRESENTATION ABLATION BENCHMARK (MULTI-INTERVAL CONSOLIDATED EDGES)");
+        ctx.println("  Dynamic String Parsing vs ChronoGraph Objects vs T-TinkerPop Normalized epochMillis (Traversal & Direct)");
+        ctx.println("  Empirically validating Section IV-B(b) pipeline stall elimination");
+        ctx.println("=================================================================================================================");
+
+        ctx.printf("%-10s %-16s %15s %15s %15s %15s %12s%n",
                 "Events", "Operator", "Dynamic String", "ChronoGraph", "TPop Traversal", "TPop Direct", "Speedup vs Str");
-        System.out.println("-----------------------------------------------------------------------------------------------------------------");
+        ctx.println("-----------------------------------------------------------------------------------------------------------------");
 
         List<AblationResult> results = new ArrayList<>();
 
-        for (int size : SIZES) {
+        for (int size : sizes) {
             try {
                 initializeGraphs(size);
                 verifyParity(size);
                 warmup();
 
-                int iters = size >= 500000 ? LARGE_BENCHMARK_ITERS : DEFAULT_BENCHMARK_ITERS;
+                int iters = size >= 500000 ? currentLargeIters : currentDefaultIters;
 
                 // 1. temporalBefore
                 double strBefore = measureMs(() -> runDynamicStringFilter("before"), iters);
@@ -130,6 +170,10 @@ public class RepresentationAblationBenchmark {
         }
 
         printLatexTable(results);
+    }
+
+    public void run() {
+        run(new BenchmarkContext(null, ScaleMode.FULL, null, -1, -1, null));
     }
 
     private void initializeGraphs(int edgeCount) {
@@ -307,7 +351,7 @@ public class RepresentationAblationBenchmark {
     }
 
     private void warmup() {
-        for (int i = 0; i < WARMUP_ITERS; i++) {
+        for (int i = 0; i < currentWarmupIters; i++) {
             sink = runDynamicStringFilter("before");
             sink = runChronoGraphFilter(TemporalRelation.isBefore);
             sink = gNorm.E().hasLabel("event").temporalBefore(normRefEdge).with(Temporal.ANY).count().next();

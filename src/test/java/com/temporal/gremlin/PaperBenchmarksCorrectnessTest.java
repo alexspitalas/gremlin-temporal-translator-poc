@@ -1,5 +1,6 @@
 package com.temporal.gremlin;
 
+import com.temporal.gremlin.util.DatasetResolver;
 import com.tinkerpop.blueprints.TimeInstant;
 import com.tinkerpop.blueprints.TimePeriod;
 import org.apache.tinkerpop.gremlin.process.computer.search.path.TemporalPathTarget;
@@ -50,7 +51,7 @@ import static org.junit.Assert.*;
  */
 public class PaperBenchmarksCorrectnessTest {
 
-    private static final String CSV_PATH = "datasets/flightlist_20190101_20190131.csv";
+    private static final String CSV_PATH = DatasetResolver.resolveFlightCsv(null).getAbsolutePath();
     private static final DateTimeFormatter CSV_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssXXX");
     private static final DateTimeFormatter ISO_FMT = DateTimeFormatter.ISO_INSTANT;
 

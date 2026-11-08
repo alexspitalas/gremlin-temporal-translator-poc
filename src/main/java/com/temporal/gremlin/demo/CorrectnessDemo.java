@@ -3,6 +3,7 @@ package com.temporal.gremlin.demo;
 import com.temporal.gremlin.query.TemporalQuerySpec;
 import com.temporal.gremlin.translator.TemporalGremlinTranslator;
 import com.temporal.gremlin.executor.GremlinExecutor;
+import com.temporal.gremlin.util.DatasetResolver;
 import com.temporal.gremlin.util.GraphDataLoader;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.structure.Edge;
@@ -17,7 +18,7 @@ import java.util.stream.Collectors;
  */
 public class CorrectnessDemo {
 
-    private static final String CSV_PATH = "flightlist_20190101_20190131.csv";
+    private static final String CSV_PATH = DatasetResolver.resolveFlightCsv(null).getAbsolutePath();
     private static final int LIMIT = 10000;
     private static final int SAMPLE_SIZE = 500;
 

@@ -7,6 +7,7 @@ A comprehensive proof-of-concept demonstrating translation overhead measurement 
 - [Features](#features)
 - [Project Structure](#project-structure)
 - [Quick Start](#quick-start)
+  - [Unified Benchmark Suite & CLI Menu (`./bench.sh`)](#unified-benchmark-suite--cli-menu-benchsh)
 - [String-Based Transformer](#string-based-transformer)
 - [Programmatic API](#programmatic-api)
 - [Allen Temporal Algebra](#allen-temporal-algebra)
@@ -45,9 +46,29 @@ A comprehensive proof-of-concept demonstrating translation overhead measurement 
 ```
 gremlin-temporal-translator-poc/
 ├── pom.xml                              # Maven build configuration
+├── bench.sh                             # Unified benchmark suite & CLI runner (or ./bench)
 ├── README.md                            # This file
+├── BENCHMARKS_AND_CORRECTNESS.md        # Comprehensive benchmark & parity verification guide
 │
 └── src/main/java/com/temporal/gremlin/
+    ├── benchmark/
+    │   ├── BenchmarkSuite.java          # Main orchestrator (Interactive Menu & CLI flags)
+    │   ├── CliMenu.java                 # Interactive terminal menu with defaults
+    │   ├── CliArgsParser.java           # Command-line argument parser
+    │   ├── BenchmarkRegistry.java       # Central catalog of all benchmarks & suites
+    │   ├── BenchmarkContext.java        # Runtime execution context & scale controller
+    │   ├── BenchmarkOutput.java         # Dual logger (Console + Markdown + Text reports)
+    │   ├── BenchmarkTask.java           # Benchmark task interface
+    │   ├── BenchmarkGroup.java          # Grouping categories (PAPER, MACRO, MICRO, etc.)
+    │   ├── ScaleMode.java               # Workload scale modes (FULL, QUICK, CUSTOM)
+    │   ├── TestRunnerBridge.java        # Programmatic JUnit test executor & reporter
+    │   └── DemoRunner.java              # Interactive demo runner
+    │
+    ├── util/
+    │   ├── DatasetResolver.java         # Intelligent dataset locator & validator
+    │   ├── GraphDataLoader.java         # Ingestion utilities
+    │   └── TemporalDataHelper.java      # Temporal generation helpers
+    │
     ├── query/
     │   ├── TemporalQuerySpec.java      # Query specification + Allen operators
     │   └── TemporalTransaction.java    # Mutation specification (add vertex/edge)
@@ -65,20 +86,23 @@ gremlin-temporal-translator-poc/
     │
     ├── demo/
     │   ├── TranslatorDemo.java          # Interactive demo with examples
+    │   ├── CorrectnessDemo.java         # Native vs Translator comparison
+    │   ├── TemporalApplicationsDemo.java # Temporal algorithms demo
+    │   ├── TestContinuousPath.java      # Continuous paths demo
     │   └── StringTransformerDemo.java   # String transformer demo
     │
     ├── executor/
     │   └── GremlinExecutor.java         # Query execution engine
     │
     └── bench/
-        ├── TranslatorVsNativeBenchmark.java            # Translation overhead & execution comparison
         ├── ChronoGraphBenchmark.java                   # Table V: OpenSky tBFS & temporalBefore (5 modes)
         ├── IndexSelectivityTradeoffBenchmark.java      # Table VI: Index selectivity crossover (0.01%–75%) & write cost
         ├── RepresentationAblationBenchmark.java        # Table VIII: Dynamic String vs ChronoGraph vs Normalized long[]
         ├── MultiIntervalStressBenchmark.java           # Table IX: Multi-interval scaling (k=1,2,5,10 up to 1M edges)
         ├── TemporalPageRankBenchmark.java              # Table X: Temporal PageRank vs ChronoGraph Extract+TPR vs Static PR
         ├── TTinkerPopCapabilitiesScalingBenchmark.java # Table XI: Ligozat (p,q)-calculus, Historical Views, Path Targets
-        └── TemporalLifetimeStorageBenchmark.java       # lifetime() storage read/write comparison
+        ├── TemporalLifetimeStorageBenchmark.java       # lifetime() storage read/write comparison
+        └── TranslatorVsNativeBenchmark.java            # Translation overhead & execution comparison
 └── src/test/java/com/temporal/gremlin/
     ├── PaperBenchmarksCorrectnessTest.java # Column-by-column parity suite for all paper tables (Tables V–XI)
     ├── ChronoGraphParityTest.java          # Allen 13 relations, multi-interval & tBFS parity with ChronoGraph
@@ -129,6 +153,38 @@ mvn exec:java -Dexec.mainClass="com.temporal.gremlin.demo.TranslatorDemo"
 
 # String transformer demo
 mvn exec:java -Dexec.mainClass="com.temporal.gremlin.demo.StringTransformerDemo"
+```
+
+### Unified Benchmark Suite & CLI Menu (`./bench.sh`)
+
+The repository features a centralized, easy-to-use benchmark suite runner with an interactive CLI menu, logical suite groupings, custom dataset support, scale controls (Full vs. Quick smoke-test), and dual output formats (terminal + timestamped Markdown/TXT reports saved to `results/`).
+
+#### Option 1: Interactive Menu Mode (Recommended for Exploration)
+Run `./bench.sh` (or `./bench`) without arguments. Hitting `<Enter>` selects sensible defaults (Full Paper Suite with OpenSky dataset saving to `results/`):
+```bash
+./bench.sh
+```
+
+#### Option 2: Command-Line Flags (Recommended for Automation & Scripts)
+Run any test or benchmark non-interactively with CLI arguments:
+```bash
+# 1. Fast smoke-test evaluation across all paper benchmarks (~30 seconds)
+./bench.sh --mode=bench --suite=paper --scale=quick
+
+# 2. Full Journal Paper reproduction suite (Tables V–XI)
+./bench.sh --mode=bench --suite=paper
+
+# 3. Automated correctness and cross-engine parity suite (17 tests)
+./bench.sh --mode=test --test-suite=all
+
+# 4. Run both correctness verification and paper benchmarks sequentially
+./bench.sh --mode=both --suite=paper
+
+# 5. Run a specific benchmark with a custom dataset and custom output path
+./bench.sh --target=chronograph --dataset=/path/to/flightlist.csv --output=results/my_run.txt
+
+# 6. List all available benchmark groups, individual tasks, tests, and demos
+./bench.sh --list
 ```
 
 ## String-Based Transformer
@@ -481,6 +537,9 @@ TranslationResult result = translator.translate(tx);
 ```
 
 ## Benchmarks
+
+> [!TIP]
+> **Recommended Runner**: Use `./bench.sh` (or `./bench`) to run benchmarks interactively or via CLI flags (e.g. `./bench.sh --suite=paper --scale=quick`). All individual benchmark classes also remain directly runnable via `mvn exec:java` as detailed below for 100% backward compatibility.
 
 See [**BENCHMARKS_AND_CORRECTNESS.md**](BENCHMARKS_AND_CORRECTNESS.md) for the complete reproducibility guide and column-by-column parity analysis corresponding to **Tables V–XI** of the T-TinkerPop journal paper.
 

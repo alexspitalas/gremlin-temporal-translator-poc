@@ -1,10 +1,16 @@
 package com.temporal.gremlin.bench;
 
+import com.temporal.gremlin.benchmark.BenchmarkContext;
+import com.temporal.gremlin.benchmark.BenchmarkGroup;
+import com.temporal.gremlin.benchmark.BenchmarkTask;
+import com.temporal.gremlin.benchmark.ScaleMode;
 import com.temporal.gremlin.query.TemporalQuerySpec;
 import com.temporal.gremlin.translator.*;
 import com.temporal.gremlin.executor.GremlinExecutor;
+import com.temporal.gremlin.util.DatasetResolver;
 import com.temporal.gremlin.util.GraphDataLoader;
 
+import java.io.File;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
@@ -26,11 +32,36 @@ import org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerGraph;
  * - Compare end-to-end execution time of Translated queries vs Native Java TinkerPop.
  * - Demonstrate scalability across different dataset sizes.
  */
-public class TranslatorVsNativeBenchmark {
+public class TranslatorVsNativeBenchmark implements BenchmarkTask {
 
     private static final int WARMUP_ITERATIONS = 5;
     private static final int BENCHMARK_ITERATIONS = 50;
-    private static final String CSV_PATH = "flightlist_20190101_20190131.csv";
+    private static final int[] SIZES = {1000, 10000, 100000};
+    private static final int[] QUICK_SIZES = {1000, 5000};
+
+    @Override
+    public String getId() {
+        return "translator-vs-native";
+    }
+
+    @Override
+    public String getName() {
+        return "Translator Overhead vs Native T-Gremlin Execution";
+    }
+
+    @Override
+    public String getDescription() {
+        return "Measures 4-phase translation pipeline latency and compares native vs translated execution.";
+    }
+
+    @Override
+    public BenchmarkGroup getGroup() {
+        return BenchmarkGroup.TRANSLATOR;
+    }
+
+    private File currentCsvFile;
+    private int currentWarmupIters = WARMUP_ITERATIONS;
+    private int currentBenchmarkIters = BENCHMARK_ITERATIONS;
     
     private static final TemporalQuerySpec.AllenOperator[] OPERATORS = {
         TemporalQuerySpec.AllenOperator.temporalBefore,
@@ -49,15 +80,34 @@ public class TranslatorVsNativeBenchmark {
     private Edge refEdge;
 
     public static void main(String[] args) {
-        TranslatorVsNativeBenchmark bench = new TranslatorVsNativeBenchmark();
-        
-        // Scalability sizes
-        int[] sizes = {1000, 10000, 100000}; 
-        String[] labels = {"1,000", "10,000", "100,000"};
+        new TranslatorVsNativeBenchmark().run();
+    }
 
-        for (int i = 0; i < sizes.length; i++) {
-            bench.runForSize(sizes[i], labels[i]);
+    @Override
+    public void run(BenchmarkContext ctx) {
+        if (ctx == null) {
+            ctx = new BenchmarkContext(null, ScaleMode.FULL, null, -1, -1, null);
         }
+
+        this.currentCsvFile = ctx.getDatasetFile();
+        this.currentWarmupIters = ctx.getWarmupIterations(WARMUP_ITERATIONS);
+        this.currentBenchmarkIters = ctx.getIterations(BENCHMARK_ITERATIONS);
+
+        int[] sizes = ctx.getSizes(getId(), SIZES, QUICK_SIZES);
+
+        ctx.println("==========================================================================================================");
+        ctx.println("  TRANSLATOR OVERHEAD VS NATIVE T-GREMLIN BENCHMARK");
+        ctx.println("  Dataset: " + currentCsvFile.getAbsolutePath());
+        ctx.println("==========================================================================================================");
+
+        for (int size : sizes) {
+            String label = String.format("%,d", size);
+            runForSize(size, label);
+        }
+    }
+
+    public void run() {
+        run(new BenchmarkContext(null, ScaleMode.FULL, null, -1, -1, null));
     }
 
     private void runForSize(int size, String label) {
@@ -86,8 +136,9 @@ public class TranslatorVsNativeBenchmark {
         g = graph.traversal();
         
         // Fast Native Loading
+        String csv = (currentCsvFile != null) ? currentCsvFile.getAbsolutePath() : DatasetResolver.resolveFlightCsv(null).getAbsolutePath();
         GraphDataLoader loader = new GraphDataLoader(g);
-        loader.load_dataset_flight_native(CSV_PATH, size); 
+        loader.load_dataset_flight_native(csv, size); 
 
         // Get a reference flight edge for benchmarks
         if (g.E().hasLabel("flight").hasNext()) {
@@ -118,11 +169,11 @@ public class TranslatorVsNativeBenchmark {
         double totalParsing = 0, totalTransform = 0, totalOptimization = 0, totalCodegen = 0;
         
         // Warmup
-        for(int i=0; i<WARMUP_ITERATIONS; i++) {
+        for(int i=0; i<currentWarmupIters; i++) {
             translator.translate(spec);
         }
 
-        for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+        for (int i = 0; i < currentBenchmarkIters; i++) {
             TemporalGremlinTranslator.TranslationResult result = translator.translate(spec);
             totalParsing += result.metrics.getParsingTime();
             totalTransform += result.metrics.getTransformTime();
@@ -131,7 +182,7 @@ public class TranslatorVsNativeBenchmark {
         }
         
         double total = totalParsing + totalTransform + totalOptimization + totalCodegen;
-        double avgTotal = total / BENCHMARK_ITERATIONS;
+        double avgTotal = total / currentBenchmarkIters;
 
         System.out.printf("  Total Translation Time: %.3f ms\n", avgTotal);
         System.out.printf("  - Parsing:        %5.1f%%\n", (totalParsing / total) * 100);
@@ -178,7 +229,7 @@ public class TranslatorVsNativeBenchmark {
     }
 
     private void warmupBenchmark(TemporalQuerySpec.AllenOperator op, Object refId) {
-        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+        for (int i = 0; i < currentWarmupIters; i++) {
             TemporalQuerySpec spec = new TemporalQuerySpec("flight", null, op)
                 .withElementType(TemporalQuerySpec.ElementType.EDGE)
                 .withReferenceVertex(refId);
@@ -189,7 +240,7 @@ public class TranslatorVsNativeBenchmark {
 
     private double benchmarkTranslator(TemporalQuerySpec.AllenOperator op, Object refId) {
         long translateTime = 0;
-        for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+        for (int i = 0; i < currentBenchmarkIters; i++) {
             TemporalQuerySpec spec = new TemporalQuerySpec("flight", null, op)
                 .withElementType(TemporalQuerySpec.ElementType.EDGE)
                 .withReferenceVertex(refId);
@@ -198,12 +249,12 @@ public class TranslatorVsNativeBenchmark {
             translator.translate(spec);
             translateTime += (System.nanoTime() - start);
         }
-        return translateTime / (1_000_000.0 * BENCHMARK_ITERATIONS);
+        return translateTime / (1_000_000.0 * currentBenchmarkIters);
     }
 
     private double benchmarkNative(TemporalQuerySpec.AllenOperator op) {
         long nativeTime = 0;
-        for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+        for (int i = 0; i < currentBenchmarkIters; i++) {
             long start = System.nanoTime();
             switch (op) {
                 case temporalBefore: g.E().hasLabel("flight").temporalBefore(refEdge).iterate(); break;
@@ -224,7 +275,7 @@ public class TranslatorVsNativeBenchmark {
             }
             nativeTime += (System.nanoTime() - start);
         }
-        return nativeTime / (1_000_000.0 * BENCHMARK_ITERATIONS);
+        return nativeTime / (1_000_000.0 * currentBenchmarkIters);
     }
 
     private double benchmarkExecuteIterate(TemporalQuerySpec.AllenOperator op, Object refId) {
@@ -235,12 +286,12 @@ public class TranslatorVsNativeBenchmark {
         String translatedBytecode = result.bytecode;
 
         long execTime = 0;
-        for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+        for (int i = 0; i < currentBenchmarkIters; i++) {
             long start = System.nanoTime();
             executor.executeIterate(translatedBytecode);
             execTime += (System.nanoTime() - start);
         }
-        return execTime / (1_000_000.0 * BENCHMARK_ITERATIONS);
+        return execTime / (1_000_000.0 * currentBenchmarkIters);
     }
 
     private double benchmarkDirectQuery(TemporalQuerySpec.AllenOperator op) {
@@ -261,7 +312,7 @@ public class TranslatorVsNativeBenchmark {
         }
 
         long directTime = 0;
-        for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+        for (int i = 0; i < currentBenchmarkIters; i++) {
             long start = System.nanoTime();
             switch (op) {
                 case temporalAfter: g.E().hasLabel("flight").has("startTime", P.gt(refEnd)).iterate(); break;
@@ -277,7 +328,7 @@ public class TranslatorVsNativeBenchmark {
             }
             directTime += (System.nanoTime() - start);
         }
-        return directTime / (1_000_000.0 * BENCHMARK_ITERATIONS);
+        return directTime / (1_000_000.0 * currentBenchmarkIters);
     }
 
     private void cleanup() {
