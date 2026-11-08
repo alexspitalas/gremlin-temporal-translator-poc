@@ -15,8 +15,12 @@ public class BenchmarkOutput {
     private final File txtOutputFile;
     private final File mdOutputFile;
 
+    private final PrintStream originalOut;
+    private PrintStream teeOut;
     private PrintWriter txtWriter;
     private PrintWriter mdWriter;
+    private StringBuilder activeSectionBuffer;
+    private String activeSectionTitle;
 
     private final List<TestRecord> testRecords = new ArrayList<>();
     private final long startTimeMillis;
@@ -39,6 +43,7 @@ public class BenchmarkOutput {
 
     public BenchmarkOutput(String destinationPath, boolean enableTxt, boolean enableMd) {
         this.startTimeMillis = System.currentTimeMillis();
+        this.originalOut = System.out;
         String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date(startTimeMillis));
 
         if (destinationPath == null || destinationPath.trim().isEmpty() || "none".equalsIgnoreCase(destinationPath.trim())) {
@@ -75,7 +80,7 @@ public class BenchmarkOutput {
             try {
                 this.txtWriter = new PrintWriter(new OutputStreamWriter(new FileOutputStream(this.txtOutputFile), StandardCharsets.UTF_8), true);
             } catch (IOException e) {
-                System.err.println("Warning: Could not create TXT output file: " + e.getMessage());
+                originalOut.println("Warning: Could not create TXT output file: " + e.getMessage());
                 this.txtWriter = null;
             }
         } else {
@@ -88,12 +93,79 @@ public class BenchmarkOutput {
                 this.mdWriter = new PrintWriter(new OutputStreamWriter(new FileOutputStream(this.mdOutputFile), StandardCharsets.UTF_8), true);
                 initMarkdownReport();
             } catch (IOException e) {
-                System.err.println("Warning: Could not create Markdown output file: " + e.getMessage());
+                originalOut.println("Warning: Could not create Markdown output file: " + e.getMessage());
                 this.mdWriter = null;
             }
         } else {
             this.mdOutputFile = null;
         }
+
+        if (this.saveToFile) {
+            installTeeStream();
+        }
+    }
+
+    private void installTeeStream() {
+        OutputStream teeStream = new OutputStream() {
+            @Override
+            public void write(int b) throws IOException {
+                originalOut.write(b);
+                String s = new String(new byte[]{(byte) b}, StandardCharsets.UTF_8);
+                if (txtWriter != null) {
+                    txtWriter.print(s);
+                }
+                if (activeSectionBuffer != null) {
+                    activeSectionBuffer.append(s);
+                }
+            }
+
+            @Override
+            public void write(byte[] b, int off, int len) throws IOException {
+                originalOut.write(b, off, len);
+                String s = new String(b, off, len, StandardCharsets.UTF_8);
+                if (txtWriter != null) {
+                    txtWriter.print(s);
+                }
+                if (activeSectionBuffer != null) {
+                    activeSectionBuffer.append(s);
+                }
+            }
+
+            @Override
+            public void flush() throws IOException {
+                originalOut.flush();
+                if (txtWriter != null) {
+                    txtWriter.flush();
+                }
+            }
+        };
+        this.teeOut = new PrintStream(teeStream, true, StandardCharsets.UTF_8);
+        System.setOut(this.teeOut);
+    }
+
+    public void beginCaptureSection(String title) {
+        endCaptureSection();
+        this.activeSectionTitle = title;
+        this.activeSectionBuffer = new StringBuilder();
+    }
+
+    public void endCaptureSection() {
+        if (this.activeSectionBuffer != null && mdWriter != null) {
+            String content = this.activeSectionBuffer.toString().trim();
+            if (!content.isEmpty()) {
+                if (activeSectionTitle != null && !activeSectionTitle.isEmpty()) {
+                    mdWriter.println("### " + activeSectionTitle);
+                    mdWriter.println();
+                }
+                mdWriter.println("```text");
+                mdWriter.println(content);
+                mdWriter.println("```");
+                mdWriter.println();
+                mdWriter.flush();
+            }
+        }
+        this.activeSectionBuffer = null;
+        this.activeSectionTitle = null;
     }
 
     private void initMarkdownReport() {
@@ -112,27 +184,18 @@ public class BenchmarkOutput {
 
     public void println(String msg) {
         System.out.println(msg);
-        if (txtWriter != null) {
-            txtWriter.println(msg);
-        }
     }
 
     public void println() {
-        println("");
+        System.out.println();
     }
 
     public void print(String msg) {
         System.out.print(msg);
-        if (txtWriter != null) {
-            txtWriter.print(msg);
-        }
     }
 
     public void printf(String format, Object... args) {
         System.out.printf(format, args);
-        if (txtWriter != null) {
-            txtWriter.printf(format, args);
-        }
     }
 
     public void header(String title) {
@@ -204,6 +267,7 @@ public class BenchmarkOutput {
     }
 
     public void finish() {
+        endCaptureSection();
         long elapsed = System.currentTimeMillis() - startTimeMillis;
         println();
         println("=".repeat(100));
@@ -252,6 +316,11 @@ public class BenchmarkOutput {
         println("=".repeat(100));
         println();
 
+        if (teeOut != null) {
+            teeOut.flush();
+            System.setOut(originalOut);
+            teeOut = null;
+        }
         if (txtWriter != null) {
             txtWriter.flush();
             txtWriter.close();

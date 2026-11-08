@@ -120,6 +120,7 @@ public class TemporalPageRankBenchmark implements BenchmarkTask {
                 int vertexCount = g.V().count().next().intValue();
                 int edgeCount   = g.E().count().next().intValue();
 
+                verifyParity(limit);
                 warmup();
 
                 int iters = limit >= 500000 ? currentLargeIters : currentDefaultIters;
@@ -199,7 +200,7 @@ public class TemporalPageRankBenchmark implements BenchmarkTask {
 
                 String origin = parts[5].trim();
                 String dest   = parts[6].trim();
-                if (origin.isEmpty() || dest.isEmpty()) continue;
+                if (origin.isEmpty() || dest.isEmpty() || origin.equals(dest)) continue;
 
                 String firstSeenStr = parts[7].trim();
                 String lastSeenStr  = parts[8].trim();
@@ -283,6 +284,47 @@ public class TemporalPageRankBenchmark implements BenchmarkTask {
         // Execute Rozenshtein & Gionis algorithm on the extracted stream
         Map<Object, Double> rank = TemporalPageRankAlgorithm.execute(cgEdges, 0.85d, 0.5d, true);
         return rank.size();
+    }
+
+    private void verifyParity(int limit) {
+        long tpopCount = g.V().temporalPageRank()
+                .with(TemporalPageRank.propertyName, "tpr")
+                .with(TemporalPageRank.alpha, 0.85d)
+                .with(TemporalPageRank.beta, 0.5d)
+                .with(TemporalPageRank.normalize, true)
+                .count().next();
+
+        TimePeriod allTime = new TimePeriod(Long.MIN_VALUE, Long.MAX_VALUE);
+        List<TemporalEdge> cgEdges = new ArrayList<>();
+        for (com.tinkerpop.blueprints.Edge e : chronoGraph.getEdges()) {
+            ChronoEdge ce = (ChronoEdge) e;
+            String outId = (String) ce.getVertex(com.tinkerpop.blueprints.Direction.OUT).getId();
+            String inId  = (String) ce.getVertex(com.tinkerpop.blueprints.Direction.IN).getId();
+            Edge base = routeEdgeMap.get(outId + "->" + inId);
+            if (base == null) continue;
+            for (com.tinkerpop.blueprints.Event ev : ce.getEvents(allTime, TemporalRelation.during)) {
+                TimePeriod tp = (TimePeriod) ev.getTime();
+                cgEdges.add(new TemporalEdge(base, Lifetime.from(new Date(tp.getS()), new Date(tp.getF()))));
+            }
+        }
+        Map<Object, Double> cgRanks = TemporalPageRankAlgorithm.execute(cgEdges, 0.85d, 0.5d, true);
+
+        if (tpopCount != cgRanks.size()) {
+            throw new IllegalStateException(String.format(
+                    "TemporalPageRank vertex count mismatch at limit=%d: TPop=%d, ChronoGraph=%d",
+                    limit, tpopCount, cgRanks.size()));
+        }
+        Iterator<Vertex> vIt = graph.vertices();
+        while (vIt.hasNext()) {
+            Vertex v = vIt.next();
+            double tpopScore = ((Number) v.value("tpr")).doubleValue();
+            double cgScore = cgRanks.getOrDefault(v.id(), 0.0);
+            if (Math.abs(tpopScore - cgScore) > 1e-12) {
+                throw new IllegalStateException(String.format(
+                        "TemporalPageRank score mismatch on airport %s at limit=%d: TPop=%.15f, ChronoGraph=%.15f",
+                        v.value("code"), limit, tpopScore, cgScore));
+            }
+        }
     }
 
     private void warmup() {

@@ -13,11 +13,13 @@ import com.temporal.gremlin.util.GraphDataLoader;
 import java.io.File;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Date;
 
 import org.apache.tinkerpop.gremlin.process.traversal.P;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Graph;
+import org.apache.tinkerpop.gremlin.structure.temporal.Lifetime;
 import org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerGraph;
 
 /**
@@ -63,15 +65,8 @@ public class TranslatorVsNativeBenchmark implements BenchmarkTask {
     private int currentWarmupIters = WARMUP_ITERATIONS;
     private int currentBenchmarkIters = BENCHMARK_ITERATIONS;
     
-    private static final TemporalQuerySpec.AllenOperator[] OPERATORS = {
-        TemporalQuerySpec.AllenOperator.temporalBefore,
-        TemporalQuerySpec.AllenOperator.temporalAfter,
-        TemporalQuerySpec.AllenOperator.temporalMeets,
-        TemporalQuerySpec.AllenOperator.temporalMetBy,
-        TemporalQuerySpec.AllenOperator.temporalOverlaps,
-        TemporalQuerySpec.AllenOperator.temporalDuring,
-        TemporalQuerySpec.AllenOperator.temporalEqual
-    };
+    private static final TemporalQuerySpec.AllenOperator[] OPERATORS =
+            TemporalQuerySpec.AllenOperator.values();
 
     private Graph graph;
     private GraphTraversalSource g;
@@ -117,6 +112,7 @@ public class TranslatorVsNativeBenchmark implements BenchmarkTask {
 
         try {
             initialize(size);
+            verifyOperatorParity(size);
             
             // 1. Internal Translation Phase Breakdown
             benchmarkTranslationPhases();
@@ -150,6 +146,75 @@ public class TranslatorVsNativeBenchmark implements BenchmarkTask {
 
         translator = new TemporalGremlinTranslator(g);
         executor = new GremlinExecutor(g);
+    }
+
+    private void verifyOperatorParity(int size) {
+        Object refId = refEdge.id();
+        for (TemporalQuerySpec.AllenOperator op : OPERATORS) {
+            long nativeCount = countNative(op);
+            TemporalQuerySpec spec = new TemporalQuerySpec("flight", null, op)
+                    .withElementType(TemporalQuerySpec.ElementType.EDGE)
+                    .withReferenceVertex(refId);
+            String bytecode = translator.translate(spec).bytecode;
+            long translatedCount = executor.execute(bytecode).size();
+            long directCount = countDirectQuery(op);
+
+            if (nativeCount != translatedCount || nativeCount != directCount) {
+                throw new IllegalStateException(String.format(
+                        "Translator vs Native parity mismatch at size=%d op=%s: Native=%d, Translated=%d, Direct=%d",
+                        size, op.name(), nativeCount, translatedCount, directCount));
+            }
+        }
+    }
+
+    private long countNative(TemporalQuerySpec.AllenOperator op) {
+        switch (op) {
+            case temporalBefore: return g.E().hasLabel("flight").temporalBefore(refEdge).count().next();
+            case temporalAfter: return g.E().hasLabel("flight").temporalAfter(refEdge).count().next();
+            case temporalMeets: return g.E().hasLabel("flight").temporalMeets(refEdge).count().next();
+            case temporalMetBy: return g.E().hasLabel("flight").temporalMetBy(refEdge).count().next();
+            case temporalOverlaps: return g.E().hasLabel("flight").temporalOverlaps(refEdge).count().next();
+            case temporalOverlappedBy: return g.E().hasLabel("flight").temporalOverlappedBy(refEdge).count().next();
+            case temporalStarts: return g.E().hasLabel("flight").temporalStarts(refEdge).count().next();
+            case temporalStartedBy: return g.E().hasLabel("flight").temporalStartedBy(refEdge).count().next();
+            case temporalDuring: return g.E().hasLabel("flight").temporalDuring(refEdge).count().next();
+            case temporalContains: return g.E().hasLabel("flight").temporalContains(refEdge).count().next();
+            case temporalEnds: return g.E().hasLabel("flight").temporalFinishes(refEdge).count().next();
+            case temporalEndedBy: return g.E().hasLabel("flight").temporalFinishedBy(refEdge).count().next();
+            case temporalEqual: return g.E().hasLabel("flight").temporalEquals(refEdge).count().next();
+            default: return 0L;
+        }
+    }
+
+    private long countDirectQuery(TemporalQuerySpec.AllenOperator op) {
+        Lifetime lt = Lifetime.getLifetimeFromProperties(refEdge);
+        Date refStartDate = new Date(lt.getStartMillis(0));
+        Date refEndDate = new Date(lt.getEndMillis(0));
+        switch (op) {
+            case temporalBefore: return g.E().hasLabel("flight").has("endTime", P.lt(refStartDate)).count().next();
+            case temporalAfter: return g.E().hasLabel("flight").has("startTime", P.gt(refEndDate)).count().next();
+            case temporalMeets: return g.E().hasLabel("flight").has("endTime", P.eq(refStartDate)).count().next();
+            case temporalMetBy: return g.E().hasLabel("flight").has("startTime", P.eq(refEndDate)).count().next();
+            case temporalOverlaps:
+                return g.E().hasLabel("flight").has("startTime", P.lt(refStartDate)).has("endTime", P.gt(refStartDate)).has("endTime", P.lt(refEndDate)).count().next();
+            case temporalOverlappedBy:
+                return g.E().hasLabel("flight").has("startTime", P.gt(refStartDate)).has("startTime", P.lt(refEndDate)).has("endTime", P.gt(refEndDate)).count().next();
+            case temporalStarts:
+                return g.E().hasLabel("flight").has("startTime", P.eq(refStartDate)).has("endTime", P.lt(refEndDate)).count().next();
+            case temporalStartedBy:
+                return g.E().hasLabel("flight").has("startTime", P.eq(refStartDate)).has("endTime", P.gt(refEndDate)).count().next();
+            case temporalDuring:
+                return g.E().hasLabel("flight").has("startTime", P.gt(refStartDate)).has("endTime", P.lt(refEndDate)).count().next();
+            case temporalContains:
+                return g.E().hasLabel("flight").has("startTime", P.lt(refStartDate)).has("endTime", P.gt(refEndDate)).count().next();
+            case temporalEnds:
+                return g.E().hasLabel("flight").has("startTime", P.gt(refStartDate)).has("endTime", P.eq(refEndDate)).count().next();
+            case temporalEndedBy:
+                return g.E().hasLabel("flight").has("startTime", P.lt(refStartDate)).has("endTime", P.eq(refEndDate)).count().next();
+            case temporalEqual:
+                return g.E().hasLabel("flight").has("startTime", P.eq(refStartDate)).has("endTime", P.eq(refEndDate)).count().next();
+            default: return 0L;
+        }
     }
     
     /**
@@ -295,36 +360,98 @@ public class TranslatorVsNativeBenchmark implements BenchmarkTask {
     }
 
     private double benchmarkDirectQuery(TemporalQuerySpec.AllenOperator op) {
-        if (!refEdge.property("startTime").isPresent() || !refEdge.property("endTime").isPresent()) return 0.0;
-        
-        Long refStart, refEnd;
+        Date refStartDate;
+        Date refEndDate;
         try {
-             Object s = refEdge.property("startTime").value();
-             if (s instanceof Number) {
-                 refStart = ((Number) s).longValue();
-                 refEnd = ((Number) refEdge.property("endTime").value()).longValue();
-             } else {
-                 refStart = LocalDateTime.parse(s.toString()).toInstant(ZoneOffset.UTC).toEpochMilli();
-                 refEnd = LocalDateTime.parse(refEdge.property("endTime").value().toString()).toInstant(ZoneOffset.UTC).toEpochMilli();
-             }
+            Lifetime lt = Lifetime.getLifetimeFromProperties(refEdge);
+            if (lt != null && !lt.isEmpty()) {
+                refStartDate = new Date(lt.getStartMillis(0));
+                refEndDate = new Date(lt.getEndMillis(0));
+            } else if (refEdge.property("startTime").isPresent() && refEdge.property("endTime").isPresent()) {
+                Object s = refEdge.property("startTime").value();
+                Object e = refEdge.property("endTime").value();
+                if (s instanceof Date) {
+                    refStartDate = (Date) s;
+                    refEndDate = (Date) e;
+                } else if (s instanceof Number) {
+                    refStartDate = new Date(((Number) s).longValue());
+                    refEndDate = new Date(((Number) e).longValue());
+                } else {
+                    refStartDate = new Date(LocalDateTime.parse(s.toString()).toInstant(ZoneOffset.UTC).toEpochMilli());
+                    refEndDate = new Date(LocalDateTime.parse(e.toString()).toInstant(ZoneOffset.UTC).toEpochMilli());
+                }
+            } else {
+                return 0.0;
+            }
         } catch (Exception e) {
-            return 0.0; 
+            return 0.0;
         }
 
         long directTime = 0;
         for (int i = 0; i < currentBenchmarkIters; i++) {
             long start = System.nanoTime();
             switch (op) {
-                case temporalAfter: g.E().hasLabel("flight").has("startTime", P.gt(refEnd)).iterate(); break;
-                case temporalBefore: g.E().hasLabel("flight").has("endTime", P.lt(refStart)).iterate(); break;
-                case temporalMeets: g.E().hasLabel("flight").has("endTime", P.eq(refStart)).iterate(); break;
-                case temporalMetBy: g.E().hasLabel("flight").has("startTime", P.eq(refEnd)).iterate(); break;
-                case temporalOverlaps: g.E().hasLabel("flight").has("startTime", P.lt(refStart)).has("endTime", P.gt(refStart)).has("endTime", P.lt(refEnd)).iterate(); break;
-                case temporalDuring: g.E().hasLabel("flight").has("startTime", P.gt(refStart)).has("endTime", P.lt(refEnd)).iterate(); break;
-                case temporalEqual: g.E().hasLabel("flight").has("startTime", P.eq(refStart)).has("endTime", P.eq(refEnd)).iterate(); break;
-                default: 
-                    // Others skipped for brevity or complexity in manual construction
-                    // (temporalOverlappedBy, Starts, StartedBy, Contains, Ends, EndedBy)
+                case temporalBefore:
+                    g.E().hasLabel("flight").has("endTime", P.lt(refStartDate)).iterate();
+                    break;
+                case temporalAfter:
+                    g.E().hasLabel("flight").has("startTime", P.gt(refEndDate)).iterate();
+                    break;
+                case temporalMeets:
+                    g.E().hasLabel("flight").has("endTime", P.eq(refStartDate)).iterate();
+                    break;
+                case temporalMetBy:
+                    g.E().hasLabel("flight").has("startTime", P.eq(refEndDate)).iterate();
+                    break;
+                case temporalOverlaps:
+                    g.E().hasLabel("flight")
+                            .has("startTime", P.lt(refStartDate))
+                            .has("endTime", P.gt(refStartDate))
+                            .has("endTime", P.lt(refEndDate)).iterate();
+                    break;
+                case temporalOverlappedBy:
+                    g.E().hasLabel("flight")
+                            .has("startTime", P.gt(refStartDate))
+                            .has("startTime", P.lt(refEndDate))
+                            .has("endTime", P.gt(refEndDate)).iterate();
+                    break;
+                case temporalStarts:
+                    g.E().hasLabel("flight")
+                            .has("startTime", P.eq(refStartDate))
+                            .has("endTime", P.lt(refEndDate)).iterate();
+                    break;
+                case temporalStartedBy:
+                    g.E().hasLabel("flight")
+                            .has("startTime", P.eq(refStartDate))
+                            .has("endTime", P.gt(refEndDate)).iterate();
+                    break;
+                case temporalDuring:
+                    g.E().hasLabel("flight")
+                            .has("startTime", P.gt(refStartDate))
+                            .has("endTime", P.lt(refEndDate)).iterate();
+                    break;
+                case temporalContains:
+                    g.E().hasLabel("flight")
+                            .has("startTime", P.lt(refStartDate))
+                            .has("endTime", P.gt(refEndDate)).iterate();
+                    break;
+                case temporalEnds:
+                    g.E().hasLabel("flight")
+                            .has("startTime", P.gt(refStartDate))
+                            .has("endTime", P.eq(refEndDate)).iterate();
+                    break;
+                case temporalEndedBy:
+                    g.E().hasLabel("flight")
+                            .has("startTime", P.lt(refStartDate))
+                            .has("endTime", P.eq(refEndDate)).iterate();
+                    break;
+                case temporalEqual:
+                    g.E().hasLabel("flight")
+                            .has("startTime", P.eq(refStartDate))
+                            .has("endTime", P.eq(refEndDate)).iterate();
+                    break;
+                default:
+                    break;
             }
             directTime += (System.nanoTime() - start);
         }

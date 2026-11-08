@@ -13,8 +13,9 @@ import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerGraph;
 
 import java.io.File;
-import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Section VI-E / Figure 4 Benchmark: Temporal Path Semantics.
@@ -79,13 +80,16 @@ public class TemporalPathSemanticsBenchmark implements BenchmarkTask {
 
         int[] hopsToRun = (ctx.getScale() == ScaleMode.QUICK) ? new int[]{2} : HOPS;
         int[] limitsToRun = (ctx.getScale() == ScaleMode.QUICK) ? new int[]{100} : LIMITS;
-        int loadLimit = (ctx.getScale() == ScaleMode.QUICK) ? 5000 : 100000;
+        int loadLimit = (ctx.getScale() == ScaleMode.QUICK) ? 5000 : -1;
+        if (ctx.getScale() == ScaleMode.CUSTOM && ctx.getCustomSizes() != null && ctx.getCustomSizes().length > 0) {
+            loadLimit = ctx.getCustomSizes()[ctx.getCustomSizes().length - 1];
+        }
 
         ctx.println();
         ctx.println("====================================================================================================");
         ctx.println("  FIGURE 4: TEMPORAL PATH SEMANTICS BENCHMARK (Continuous vs Pairwise vs Sequential)");
         ctx.println("====================================================================================================");
-        ctx.println("Dataset: " + csvFile.getAbsolutePath() + " (Loading up to " + loadLimit + " flights)");
+        ctx.println("Dataset: " + csvFile.getAbsolutePath() + " (Loading " + (loadLimit == -1 ? "all 1.1M" : "up to " + loadLimit) + " flights)");
 
         Graph graph = TinkerGraph.open();
         GraphTraversalSource g = graph.traversal();
@@ -95,7 +99,7 @@ public class TemporalPathSemanticsBenchmark implements BenchmarkTask {
             loader.load_dataset_flight_native(csvFile.getAbsolutePath(), loadLimit);
 
             // Select active hub seed vertices
-            List<Vertex> seeds = g.V().hasLabel("airport").filter(__.outE("flight")).limit(20).toList();
+            List<Vertex> seeds = g.V().hasLabel("Airport").filter(__.outE("flight")).limit(20).toList();
             if (seeds.isEmpty()) {
                 seeds = g.V().limit(10).toList();
             }
@@ -105,16 +109,21 @@ public class TemporalPathSemanticsBenchmark implements BenchmarkTask {
                     "Path Depth", "Limit", "Sequential (ms)", "Pairwise (ms)", "Continuous (ms)"));
             ctx.println("-".repeat(80));
 
+            Map<String, Double> recordedMs = new HashMap<>();
+
             for (int hops : hopsToRun) {
                 for (int limit : limitsToRun) {
                     // 1. Sequential paths
                     double seqMs = measurePath(g, seeds, "sequential", hops, limit, warmupIters, benchIters);
+                    recordedMs.put("sequential:" + hops + ":" + limit, seqMs);
 
                     // 2. Pairwise continuous paths
                     double pairMs = measurePath(g, seeds, "pairwise", hops, limit, warmupIters, benchIters);
+                    recordedMs.put("pairwise:" + hops + ":" + limit, pairMs);
 
                     // 3. Strict continuous paths
                     double contMs = measurePath(g, seeds, "continuous", hops, limit, warmupIters, benchIters);
+                    recordedMs.put("continuous:" + hops + ":" + limit, contMs);
 
                     ctx.println(String.format("%-12s | %-8d | %13.2f ms | %13.2f ms | %13.2f ms",
                             hops + " hops", limit, seqMs, pairMs, contMs));
@@ -122,9 +131,9 @@ public class TemporalPathSemanticsBenchmark implements BenchmarkTask {
             }
 
             ctx.println("\n% --- LaTeX Coordinates Snippet matching journal.tex Figure 4 ---");
-            ctx.println("% Sequential:  " + formatLatexSnippet(g, seeds, "sequential", hopsToRun, limitsToRun));
-            ctx.println("% Pairwise:    " + formatLatexSnippet(g, seeds, "pairwise", hopsToRun, limitsToRun));
-            ctx.println("% Continuous:  " + formatLatexSnippet(g, seeds, "continuous", hopsToRun, limitsToRun));
+            ctx.println("% Sequential:  " + formatLatexSnippet(recordedMs, "sequential", hopsToRun, limitsToRun));
+            ctx.println("% Pairwise:    " + formatLatexSnippet(recordedMs, "pairwise", hopsToRun, limitsToRun));
+            ctx.println("% Continuous:  " + formatLatexSnippet(recordedMs, "continuous", hopsToRun, limitsToRun));
 
         } catch (Exception e) {
             ctx.println("Error running path semantics benchmark: " + e.getMessage());
@@ -182,13 +191,16 @@ public class TemporalPathSemanticsBenchmark implements BenchmarkTask {
         }
     }
 
-    private String formatLatexSnippet(GraphTraversalSource g, List<Vertex> seeds, String mode, int[] hops, int[] limits) {
+    private String formatLatexSnippet(Map<String, Double> recordedMs, String mode, int[] hops, int[] limits) {
         StringBuilder sb = new StringBuilder();
         for (int limit : limits) {
-            sb.append(String.format("[%s limit %d]: ", mode, limit));
+            sb.append(String.format("[%s limit %d]: coordinates {", mode, limit));
             for (int h : hops) {
-                sb.append(String.format("(%d, ...) ", h));
+                Double val = recordedMs.get(mode + ":" + h + ":" + limit);
+                long rounded = val != null ? Math.round(val) : 0L;
+                sb.append(String.format("(%d, %d) ", h, rounded));
             }
+            sb.append("}; ");
         }
         return sb.toString();
     }

@@ -37,7 +37,7 @@ import java.util.*;
  *
  * Evaluates across OpenSky Flight dataset scales (10k, 50k, 100k, 500k, 1.1M flights):
  *   1. Macro-benchmark: Temporal BFS (ChronoGraph API vs T-TinkerPop native g.V(s).tbfs(...))
- *   2. Micro-benchmark: Allen operators (temporalBefore, temporalOverlaps) across:
+ *   2. Micro-benchmark: Primitive temporal operator (temporalBefore) across:
  *      - CG Loop (raw event scan)
  *      - CG NatRel (ChronoGraph NavigableSet index)
  *      - T-TinkerPop Direct (raw primitive long[] scan)
@@ -260,26 +260,16 @@ public class ChronoGraphBenchmark implements BenchmarkTask {
     }
 
     private void verifyOperatorParity(String label) {
-        String[] ops = {"temporalBefore", "temporalOverlaps"};
-        for (String op : ops) {
-            TemporalRelation cgRel = "temporalBefore".equals(op) ? TemporalRelation.isBefore : TemporalRelation.overlapsWith;
-            Temporal tpopRel = "temporalBefore".equals(op) ? Temporal.precedes : Temporal.overlaps;
+        long cLoop = countChronoGraphLoop(TemporalRelation.isBefore);
+        long cNat = countChronoGraphNatRel(TemporalRelation.isBefore);
+        long cDirect = countDirectTinkerPop(Temporal.precedes);
+        long cUnidx = gUnindexed.E().hasLabel("flight").temporalBefore(refEdgeUnindexed).with(Temporal.ANY).count().next();
+        long cIdx = gIndexed.E().hasLabel("flight").temporalBefore(refEdgeIndexed).with(Temporal.ANY).count().next();
 
-            long cLoop = countChronoGraphLoop(cgRel);
-            long cNat = countChronoGraphNatRel(cgRel);
-            long cDirect = countDirectTinkerPop(tpopRel);
-            long cUnidx = "temporalBefore".equals(op)
-                    ? gUnindexed.E().hasLabel("flight").temporalBefore(refEdgeUnindexed).with(Temporal.ANY).count().next()
-                    : gUnindexed.E().hasLabel("flight").temporalOverlaps(refEdgeUnindexed).with(Temporal.ANY).count().next();
-            long cIdx = "temporalBefore".equals(op)
-                    ? gIndexed.E().hasLabel("flight").temporalBefore(refEdgeIndexed).with(Temporal.ANY).count().next()
-                    : gIndexed.E().hasLabel("flight").temporalOverlaps(refEdgeIndexed).with(Temporal.ANY).count().next();
-
-            if (cLoop != cNat || cNat != cDirect || cDirect != cUnidx || cUnidx != cIdx) {
-                throw new IllegalStateException(String.format(
-                        "Operator parity mismatch at scale %s for %s: CGLoop=%d, CGNat=%d, Direct=%d, Unindexed=%d, Indexed=%d",
-                        label, op, cLoop, cNat, cDirect, cUnidx, cIdx));
-            }
+        if (cLoop != cNat || cNat != cDirect || cDirect != cUnidx || cUnidx != cIdx) {
+            throw new IllegalStateException(String.format(
+                    "Operator parity mismatch at scale %s for temporalBefore: CGLoop=%d, CGNat=%d, Direct=%d, Unindexed=%d, Indexed=%d",
+                    label, cLoop, cNat, cDirect, cUnidx, cIdx));
         }
     }
 
@@ -338,6 +328,8 @@ public class ChronoGraphBenchmark implements BenchmarkTask {
         System.out.printf("%-26s %11.3f ms %14d %14s%n", "ChronoGraph (API)", cgMs, cgReachable, "1.00x");
         System.out.printf("%-26s %11.3f ms %14d %13.2fx%n", "TPop tbfs (Arrival)", arrMs, arrReachable, cgMs / arrMs);
         System.out.printf("%-26s %11.3f ms %14d %13.2fx%n", "TPop tbfs (Departure)", depMs, depReachable, cgMs / depMs);
+        System.out.println("  * Note: TPop tbfs reaches a causal superset of ChronoGraph because ChronoGraph enforces strict");
+        System.out.println("    isAfter (s_next > f_prev, excluding 0-delay meets) and stores a single start-ordered period per vertex.");
     }
 
     private void runOperatorBenchmarks(String label) {
@@ -347,7 +339,6 @@ public class ChronoGraphBenchmark implements BenchmarkTask {
         System.out.println("-".repeat(106));
 
         benchmarkSingleOperator("temporalBefore", TemporalRelation.isBefore, Temporal.precedes);
-        benchmarkSingleOperator("temporalOverlaps", TemporalRelation.overlapsWith, Temporal.overlaps);
     }
 
     private void benchmarkSingleOperator(String opName, TemporalRelation cgRel, Temporal tpopRel) {

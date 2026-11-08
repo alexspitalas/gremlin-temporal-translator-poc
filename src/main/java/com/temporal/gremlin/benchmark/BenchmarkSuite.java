@@ -50,6 +50,9 @@ public class BenchmarkSuite {
     }
 
     private static void executeSuite(CliArgsParser.CliOptions opts) {
+        if (opts.datasetPath != null && !opts.datasetPath.trim().isEmpty()) {
+            System.setProperty("dataset.path", opts.datasetPath.trim());
+        }
         BenchmarkOutput output = new BenchmarkOutput(opts.outputPath, opts.saveTxt, opts.saveMd);
         BenchmarkContext ctx = new BenchmarkContext(
                 opts.datasetPath,
@@ -78,7 +81,9 @@ public class BenchmarkSuite {
 
         try {
             if ("demo".equals(opts.mode)) {
+                output.beginCaptureSection("Feature Demo (" + (opts.demoTarget != null ? opts.demoTarget : "all") + ")");
                 DemoRunner.runDemo(opts.demoTarget, output);
+                output.endCaptureSection();
                 return;
             }
 
@@ -95,7 +100,9 @@ public class BenchmarkSuite {
 
                 for (int i = 0; i < tasksToRun.size(); i++) {
                     BenchmarkTask task = tasksToRun.get(i);
+                    String sectionHeader = String.format("[%d/%d] %s — %s", i + 1, tasksToRun.size(), task.getId(), task.getName());
                     output.println(String.format("%n[%d/%d] Running %s (%s)...", i + 1, tasksToRun.size(), task.getId(), task.getName()));
+                    output.beginCaptureSection(sectionHeader);
                     long s = System.currentTimeMillis();
                     try {
                         task.run(ctx);
@@ -105,6 +112,8 @@ public class BenchmarkSuite {
                         output.println("Error running benchmark '" + task.getId() + "': " + e.getMessage());
                         e.printStackTrace();
                         overallSuccess = false;
+                    } finally {
+                        output.endCaptureSection();
                     }
                 }
             }

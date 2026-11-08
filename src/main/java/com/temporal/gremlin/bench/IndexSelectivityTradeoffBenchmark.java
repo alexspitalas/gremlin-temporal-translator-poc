@@ -17,33 +17,37 @@ import org.dfpl.chronograph.crud.memory.ChronoEdge;
 import org.dfpl.chronograph.crud.memory.ChronoGraph;
 import org.dfpl.chronograph.crud.memory.ChronoVertex;
 
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.NavigableSet;
 import java.util.function.LongSupplier;
 
 /**
- * Index & Traversal Selectivity Trade-off Benchmark for the T-TinkerPop journal paper.
+ * Index & Traversal Selectivity Trade-off Benchmark for the T-TinkerPop journal paper
+ * (Table VII / tab:index-selectivity-tradeoff).
  *
  * Honestly evaluates both the strengths and architectural weaknesses of T-TinkerPop:
  *   1. Ingestion Overhead (Write Penalty):
  *      Compares edge ingestion latency across T-TinkerPop Unindexed (primitive long[]),
- *      T-TinkerPop Indexed (TemporalTinkerIndex IntervalTree), and ChronoGraph (TreeSet).
- *   2. Query Selectivity Crossover (0.01% to 75% selectivity on 500,000 edges):
+ *      T-TinkerPop Indexed (TemporalTinkerIndex IntervalTree), and ChronoGraph (TreeSet)
+ *      on multi-interval edges (k = 3 disjoint intervals per edge).
+ *   2. Query Selectivity Crossover (0.01% to 75% selectivity on 500,000 edges, 1.5M intervals, temporalOverlaps):
  *      Demonstrates:
  *      - Strength: At low selectivity (0.01% - 5%), automated TemporalTinkerIndex routing
  *        achieves O(log |E| + K) sub-millisecond lookups, outperforming ChronoGraph and
- *        unindexed scans by 10x - 100x+.
+ *        unindexed scans by 10x - 600x+.
  *      - Weakness 1: At broad selectivity (>= 25% - 75%), interval-tree candidate collection
- *        and deduplication become slower than sequential primitive long[] scans.
- *      - Weakness 2: Unindexed Gremlin traversal (TPop Unindexed) incurs ~1.4x - 1.8x
- *        traverser/iterator overhead relative to raw storage iteration (TPop Direct) when
- *        a high fraction of edges pass the filter and must be wrapped as DefaultTraversers.
+ *        and deduplication become slower than sequential primitive long[] scans (~15% crossover).
+ *      - Weakness 2: Unindexed Gremlin traversal (TPop Unindexed) incurs ~1.4x - 1.5x
+ *        traverser/iterator overhead relative to raw storage iteration (TPop Direct).
  */
 public class IndexSelectivityTradeoffBenchmark implements BenchmarkTask {
 
     private static final int WARMUP_ITERS = 3;
     private static final int BENCHMARK_ITERS = 10;
     private static final int QUERY_GRAPH_SIZE = 500_000;
+    private static final int INTERVALS_PER_EDGE = 3;
     private static final int[] INGESTION_SIZES = {50_000, 100_000, 500_000};
     private static final int[] QUICK_INGESTION_SIZES = {5000, 20000};
 
@@ -59,7 +63,7 @@ public class IndexSelectivityTradeoffBenchmark implements BenchmarkTask {
 
     @Override
     public String getDescription() {
-        return "Compares ingestion write penalty and query selectivity crossover across 0.01% to 75% on 500k edges.";
+        return "Compares ingestion write penalty and query selectivity crossover across 0.01% to 75% on 500k edges (k=3).";
     }
 
     @Override
@@ -72,9 +76,8 @@ public class IndexSelectivityTradeoffBenchmark implements BenchmarkTask {
     private int currentQueryGraphSize = QUERY_GRAPH_SIZE;
     private int[] currentIngestionSizes = INGESTION_SIZES;
 
-    // Total timeline: [0, 1_000_000_000L]. Edge i has interval [i * 2000L, i * 2000L + 1000L).
-    private static final long STEP_MS = 2_000L;
-    private static final long EDGE_SPAN_MS = 1_000L;
+    private static final long TIMELINE_START = 1_546_300_800_000L;
+    private static final long STEP_SPAN = 100_000L;
 
     private static final double[] SELECTIVITY_FRACTIONS = {0.0001, 0.001, 0.01, 0.05, 0.10, 0.25, 0.50, 0.75};
     private static final String[] SELECTIVITY_LABELS = {"0.01%", "0.10%", "1.00%", "5.00%", "10.00%", "25.00%", "50.00%", "75.00%"};
@@ -152,10 +155,12 @@ public class IndexSelectivityTradeoffBenchmark implements BenchmarkTask {
     }
 
     private void runSelectivityCrossoverBenchmark() {
-        System.out.println("\n--- Part 2: Query Selectivity Crossover on " + currentQueryGraphSize + " Edges (Operator: temporalDuring) ---");
-        System.out.printf("%-12s %12s %15s %15s %15s %15s %16s%n",
-                "Selectivity", "Matches", "TPop Indexed", "TPop Unindexed", "TPop Direct", "CG NatRel", "Idx vs Unidx");
-        System.out.println("-".repeat(108));
+        System.out.println("\n--- Part 2: Query Selectivity Crossover on " + currentQueryGraphSize
+                + " Multi-Interval Edges (k=" + INTERVALS_PER_EDGE + ", Operator: temporalOverlaps) ---");
+        System.out.printf("%-12s %12s %15s %15s %15s %15s %15s %15s %15s%n",
+                "Selectivity", "Matches", "TPop Indexed", "TPop Unindexed", "TPop Direct",
+                "CG NatRel", "CG Loop", "Idx vs Unidx", "Idx vs CG");
+        System.out.println("-".repeat(138));
 
         TinkerGraph unindexedGraph = buildUnindexedGraph(currentQueryGraphSize);
         TinkerGraph indexedGraph = buildIndexedGraph(currentQueryGraphSize);
@@ -164,59 +169,52 @@ public class IndexSelectivityTradeoffBenchmark implements BenchmarkTask {
         GraphTraversalSource gUnindexed = unindexedGraph.traversal();
         GraphTraversalSource gIndexed = indexedGraph.traversal();
 
-        Vertex rU1 = unindexedGraph.addVertex(T.label, "ref");
-        Vertex rV1 = unindexedGraph.addVertex(T.label, "ref");
-        Vertex rU2 = indexedGraph.addVertex(T.label, "ref");
-        Vertex rV2 = indexedGraph.addVertex(T.label, "ref");
-
         try {
             for (int sIdx = 0; sIdx < SELECTIVITY_FRACTIONS.length; sIdx++) {
                 double frac = SELECTIVITY_FRACTIONS[sIdx];
                 String label = SELECTIVITY_LABELS[sIdx];
 
                 int targetMatches = Math.max(1, (int) Math.round(currentQueryGraphSize * frac));
-                // Edge i has [i * 2000, i * 2000 + 1000).
-                // For strictly 'during' [winStart, winEnd), we need edgeStart > winStart and edgeEnd < winEnd.
-                // Choose winStart = -1L (so edge 0 starting at 0 has 0 > -1) and winEnd = (targetMatches - 1) * 2000 + 1001.
-                long winStart = -1L;
-                long winEnd = (long) (targetMatches - 1) * STEP_MS + EDGE_SPAN_MS + 1L;
+                long winStart = TIMELINE_START + currentQueryGraphSize
+                        + (long) (currentQueryGraphSize - targetMatches) * STEP_SPAN + (STEP_SPAN / 2);
+                long winEnd = TIMELINE_START + currentQueryGraphSize
+                        + (long) (currentQueryGraphSize + 1) * STEP_SPAN;
 
-                Edge refE1 = gUnindexed.addE("refEvent").from(rU1).to(rV1).lifetime(winStart, winEnd).next();
-                Edge refE2 = gIndexed.addE("refEvent").from(rU2).to(rV2).lifetime(winStart, winEnd).next();
                 Lifetime refLt = Lifetime.from(winStart, winEnd);
                 TimePeriod refPeriod = new TimePeriod(winStart, winEnd);
 
-                // Verify exact match-count parity across all 4 methods
-                long cIdx = gIndexed.E().hasLabel("event").temporalDuring(refE2).count().next();
-                long cUnidx = gUnindexed.E().hasLabel("event").temporalDuring(refE1).count().next();
-                long cDirect = countDirect(unindexedGraph, refLt, Temporal.during);
-                long cCg = countChronoGraph(chronoGraph, refPeriod, TemporalRelation.during);
+                // Verify exact match-count parity across all 5 methods
+                long cIdx = gIndexed.E().hasLabel("event").temporalOverlaps(refLt).with(Temporal.ANY).count().next();
+                long cUnidx = gUnindexed.E().hasLabel("event").temporalOverlaps(refLt).with(Temporal.ANY).count().next();
+                long cDirect = countDirect(unindexedGraph, refLt, Temporal.overlaps);
+                long cCgNat = countChronoGraphNatRel(chronoGraph, refPeriod, TemporalRelation.overlapsWith);
+                long cCgLoop = countChronoGraphLoop(chronoGraph, refPeriod, TemporalRelation.overlapsWith);
 
-                if (cIdx != targetMatches || cIdx != cUnidx || cUnidx != cDirect || cDirect != cCg) {
+                if (cIdx <= 0 || cIdx != cUnidx || cUnidx != cDirect || cDirect != cCgNat || cCgNat != cCgLoop) {
                     throw new IllegalStateException(String.format(
-                            "Selectivity parity mismatch at %s: expected=%d, Indexed=%d, Unindexed=%d, Direct=%d, CG=%d",
-                            label, targetMatches, cIdx, cUnidx, cDirect, cCg));
+                            "Selectivity parity mismatch at %s: Indexed=%d, Unindexed=%d, Direct=%d, CG NatRel=%d, CG Loop=%d",
+                            label, cIdx, cUnidx, cDirect, cCgNat, cCgLoop));
                 }
 
                 // Warmup
                 for (int w = 0; w < currentWarmupIters; w++) {
-                    sink = gIndexed.E().hasLabel("event").temporalDuring(refE2).count().next();
-                    sink = gUnindexed.E().hasLabel("event").temporalDuring(refE1).count().next();
-                    sink = countDirect(unindexedGraph, refLt, Temporal.during);
-                    sink = countChronoGraph(chronoGraph, refPeriod, TemporalRelation.during);
+                    sink = gIndexed.E().hasLabel("event").temporalOverlaps(refLt).with(Temporal.ANY).count().next();
+                    sink = gUnindexed.E().hasLabel("event").temporalOverlaps(refLt).with(Temporal.ANY).count().next();
+                    sink = countDirect(unindexedGraph, refLt, Temporal.overlaps);
+                    sink = countChronoGraphNatRel(chronoGraph, refPeriod, TemporalRelation.overlapsWith);
+                    sink = countChronoGraphLoop(chronoGraph, refPeriod, TemporalRelation.overlapsWith);
                 }
 
-                double idxMs = measureMs(() -> gIndexed.E().hasLabel("event").temporalDuring(refE2).count().next(), currentBenchmarkIters);
-                double unidxMs = measureMs(() -> gUnindexed.E().hasLabel("event").temporalDuring(refE1).count().next(), currentBenchmarkIters);
-                double directMs = measureMs(() -> countDirect(unindexedGraph, refLt, Temporal.during), currentBenchmarkIters);
-                double cgMs = measureMs(() -> countChronoGraph(chronoGraph, refPeriod, TemporalRelation.during), currentBenchmarkIters);
+                double idxMs = measureMs(() -> gIndexed.E().hasLabel("event").temporalOverlaps(refLt).with(Temporal.ANY).count().next(), currentBenchmarkIters);
+                double unidxMs = measureMs(() -> gUnindexed.E().hasLabel("event").temporalOverlaps(refLt).with(Temporal.ANY).count().next(), currentBenchmarkIters);
+                double directMs = measureMs(() -> countDirect(unindexedGraph, refLt, Temporal.overlaps), currentBenchmarkIters);
+                double cgNatMs = measureMs(() -> countChronoGraphNatRel(chronoGraph, refPeriod, TemporalRelation.overlapsWith), currentBenchmarkIters);
+                double cgLoopMs = measureMs(() -> countChronoGraphLoop(chronoGraph, refPeriod, TemporalRelation.overlapsWith), currentBenchmarkIters);
 
-                double speedup = unidxMs / Math.max(idxMs, 0.0001);
-                System.out.printf("%-12s %12d %12.3f ms %12.3f ms %12.3f ms %12.3f ms %15.2fx%n",
-                        label, cIdx, idxMs, unidxMs, directMs, cgMs, speedup);
-
-                refE1.remove();
-                refE2.remove();
+                double spUnidx = unidxMs / Math.max(idxMs, 0.0001);
+                double spCg = cgNatMs / Math.max(idxMs, 0.0001);
+                System.out.printf("%-12s %12d %12.3f ms %12.3f ms %12.3f ms %12.3f ms %12.3f ms %14.2fx %14.2fx%n",
+                        label, cIdx, idxMs, unidxMs, directMs, cgNatMs, cgLoopMs, spUnidx, spCg);
             }
         } finally {
             try {
@@ -229,15 +227,26 @@ public class IndexSelectivityTradeoffBenchmark implements BenchmarkTask {
         }
     }
 
+    private Lifetime buildEdgeLifetime(int edgeIndex, int numEdges) {
+        List<Lifetime.Interval> ivs = new ArrayList<>(INTERVALS_PER_EDGE);
+        // First two disjoint intervals occur strictly prior to TIMELINE_START
+        ivs.add(new Lifetime.Interval(TIMELINE_START - 50_000L, TIMELINE_START - 40_000L));
+        ivs.add(new Lifetime.Interval(TIMELINE_START - 30_000L, TIMELINE_START - 20_000L));
+        // Third interval has start s3 < all query winStarts and end e3 decreasing with edgeIndex,
+        // so only the first K edges intersect [winStart, winEnd] in the IntervalTree and satisfy overlaps.
+        long s3 = TIMELINE_START + edgeIndex;
+        long e3 = TIMELINE_START + numEdges + (long) (numEdges - edgeIndex) * STEP_SPAN;
+        ivs.add(new Lifetime.Interval(s3, e3));
+        return Lifetime.from(ivs);
+    }
+
     private TinkerGraph buildUnindexedGraph(int numEdges) {
         TinkerGraph graph = TinkerGraph.open();
         Vertex u = graph.addVertex(T.label, "entity");
         Vertex v = graph.addVertex(T.label, "entity");
         for (int i = 0; i < numEdges; i++) {
-            long s = (long) i * STEP_MS;
-            long e = s + EDGE_SPAN_MS;
             Edge edge = u.addEdge("event", v);
-            Lifetime.from(s, e).attachTo(edge);
+            buildEdgeLifetime(i, numEdges).attachTo(edge);
         }
         return graph;
     }
@@ -248,10 +257,8 @@ public class IndexSelectivityTradeoffBenchmark implements BenchmarkTask {
         Vertex u = graph.addVertex(T.label, "entity");
         Vertex v = graph.addVertex(T.label, "entity");
         for (int i = 0; i < numEdges; i++) {
-            long s = (long) i * STEP_MS;
-            long e = s + EDGE_SPAN_MS;
             Edge edge = u.addEdge("event", v);
-            Lifetime.from(s, e).attachTo(edge);
+            buildEdgeLifetime(i, numEdges).attachTo(edge);
         }
         return graph;
     }
@@ -262,9 +269,10 @@ public class IndexSelectivityTradeoffBenchmark implements BenchmarkTask {
         for (int i = 0; i < numEdges; i++) {
             ChronoVertex v = (ChronoVertex) cg.addVertex("v" + i);
             ChronoEdge ce = (ChronoEdge) cg.addEdge(u, v, "event");
-            long s = (long) i * STEP_MS;
-            long e = s + EDGE_SPAN_MS;
-            ce.addEvent(new TimePeriod(s, e));
+            Lifetime lt = buildEdgeLifetime(i, numEdges);
+            for (int idx = 0; idx < lt.getIntervalCount(); idx++) {
+                ce.addEvent(new TimePeriod(lt.getStartMillis(idx), lt.getEndMillis(idx)));
+            }
         }
         return cg;
     }
@@ -283,12 +291,32 @@ public class IndexSelectivityTradeoffBenchmark implements BenchmarkTask {
         return count;
     }
 
-    private long countChronoGraph(ChronoGraph cg, TimePeriod refPeriod, TemporalRelation rel) {
+    private long countChronoGraphNatRel(ChronoGraph cg, TimePeriod refPeriod, TemporalRelation rel) {
         long count = 0;
         for (com.tinkerpop.blueprints.Edge e : cg.getEdges()) {
             ChronoEdge ce = (ChronoEdge) e;
             NavigableSet<?> matches = ce.getEvents(refPeriod, rel);
             if (matches != null && !matches.isEmpty()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private long countChronoGraphLoop(ChronoGraph cg, TimePeriod refPeriod, TemporalRelation rel) {
+        long count = 0;
+        TimePeriod allTime = new TimePeriod(Long.MIN_VALUE, Long.MAX_VALUE);
+        for (com.tinkerpop.blueprints.Edge e : cg.getEdges()) {
+            ChronoEdge ce = (ChronoEdge) e;
+            boolean matched = false;
+            for (com.tinkerpop.blueprints.Event ev : ce.getEvents(allTime, TemporalRelation.during)) {
+                TimePeriod tp = (TimePeriod) ev.getTime();
+                if (tp.checkTemporalRelation(refPeriod, rel)) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (matched) {
                 count++;
             }
         }

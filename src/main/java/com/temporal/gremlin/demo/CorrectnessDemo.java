@@ -91,14 +91,11 @@ public class CorrectnessDemo {
         Object startA = propsA.get("startTime");
         Object startB = propsB.get("startTime");
 
-        System.out.println("Storage type (A): " + (startA != null ? startA.getClass().getSimpleName() : "null"));
-        System.out.println("Storage type (B): " + (startB != null ? startB.getClass().getSimpleName() : "null"));
-
-        if (startA instanceof String && startB instanceof String && startA.equals(startB)) {
-            System.out.println("Temporal properties match and are stored as Strings.");
-        } else {
-            System.err.println("Property mismatch!");
-        }
+        System.out.println("Storage type (A - Native):     " + (startA != null ? startA.getClass().getSimpleName() : "null")
+                + " + normalized Lifetime long[] (temporalIntervals)");
+        System.out.println("Storage type (B - Translator): " + (startB != null ? startB.getClass().getSimpleName() : "null")
+                + " (legacy ISO-8601 string properties)");
+        System.out.println("Note: Graph A uses normalized epoch-millisecond Lifetime storage while Graph B uses ISO-8601 strings; Step 2 verifies that both produce 100% identical query results across all 13 Allen operators.");
     }
 
     private static void compareQueries(GraphTraversalSource gA, GraphTraversalSource gB) {

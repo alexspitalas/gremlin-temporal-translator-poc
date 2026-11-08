@@ -1,6 +1,6 @@
 # T-TinkerPop Benchmark Suite & Cross-Engine Parity Verification
 
-A unified, easy-to-use benchmarking and correctness verification suite for temporal graph queries on Apache TinkerPop Gremlin. This suite reproduces all empirical evaluations reported in Section VI of the **T-TinkerPop journal paper ([`journal.tex`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/journal.tex), *Tables VI–XI & Figures 1, 2, 4*)**, comparing T-TinkerPop against state-of-the-art baselines including ChronoGraph, unindexed scans, index-optimized interval trees, dynamic string parsing, and static graph algorithms.
+A unified, easy-to-use benchmarking and correctness verification suite for temporal graph queries on Apache TinkerPop Gremlin. This suite reproduces all empirical evaluations reported in Section VI of the **T-TinkerPop journal paper (`journal.tex`, *Tables VI–XI & Figures 1, 2, 4*)**, comparing T-TinkerPop against state-of-the-art baselines including ChronoGraph, unindexed scans, index-optimized interval trees, dynamic string parsing, and static graph algorithms.
 
 The suite features an **interactive terminal CLI menu**, non-interactive command-line flags, configurable workload scales (from fast 30-second smoke-tests to 1M+ element paper-scale runs), flexible dataset targeting (default OpenSky flight network or custom CSVs), and automated report generation in both GitHub-flavored Markdown and plain text.
 
@@ -127,15 +127,15 @@ Rather than navigating isolated benchmark scripts, tasks are grouped into logica
 
 ### Registered Individual Tasks (`--target`)
 
-1. **`chronograph`** ([`ChronoGraphBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/ChronoGraphBenchmark.java)) — Table 6 (`tab:chronograph-comparison`): OpenSky tBFS & Primitive Operators (5 modes).
-2. **`index-selectivity`** ([`IndexSelectivityTradeoffBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/IndexSelectivityTradeoffBenchmark.java)) — Table 7 (`tab:index-selectivity-tradeoff`): Index Crossover (0.01%–75%) & Ingestion Overhead.
-3. **`path-semantics`** ([`TemporalPathSemanticsBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/TemporalPathSemanticsBenchmark.java)) — Figure 4 (`fig:path-semantics`): Temporal Path Semantics (Continuous, Pairwise, Sequential across depths 2–5).
-4. **`representation-ablation`** ([`RepresentationAblationBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/RepresentationAblationBenchmark.java)) — Table 8 (`tab:representation-ablation-chronograph`): Dynamic String vs. ChronoGraph vs. Normalized `long[]`.
-5. **`multi-interval`** ([`MultiIntervalStressBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/MultiIntervalStressBenchmark.java)) — Table 9 (`tab:multi-interval-chronograph`): Multi-Interval Traversal Scalability ($k=1, 2, 5, 10$ up to 1M edges).
-6. **`pagerank`** ([`TemporalPageRankBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/TemporalPageRankBenchmark.java)) — Table 10 (`tab:temporal-pagerank-chronograph`): Causal Temporal PageRank vs. ChronoGraph Extract+TPR vs. Static PR.
-7. **`capabilities`** ([`TTinkerPopCapabilitiesScalingBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/TTinkerPopCapabilitiesScalingBenchmark.java)) — Table 11 (`tab:ttinkerpop-unique-scaling`): Ligozat $(p,q)$-Calculus, Historical Subgraph Views, Path Optimality.
-8. **`translator-vs-native`** ([`TranslatorVsNativeBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/TranslatorVsNativeBenchmark.java)) — Figures 1 & 2 (`fig:translation-overhead`, `fig:native-vs-exec-combined`): 4-phase translation latency breakdown vs. native Java bytecode execution across SF10 and Flight datasets.
-9. **`lifetime-storage`** ([`TemporalLifetimeStorageBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/TemporalLifetimeStorageBenchmark.java)) — Read/write latency across in-memory `lifetime()` storage representations.
+1. **`chronograph`** ([`ChronoGraphBenchmark.java`](src/main/java/com/temporal/gremlin/bench/ChronoGraphBenchmark.java)) — Table 6 (`tab:chronograph-comparison`): OpenSky tBFS & Primitive Operators (5 modes).
+2. **`index-selectivity`** ([`IndexSelectivityTradeoffBenchmark.java`](src/main/java/com/temporal/gremlin/bench/IndexSelectivityTradeoffBenchmark.java)) — Table 7 (`tab:index-selectivity-tradeoff`): Index Crossover (0.01%–75%) & Ingestion Overhead.
+3. **`path-semantics`** ([`TemporalPathSemanticsBenchmark.java`](src/main/java/com/temporal/gremlin/bench/TemporalPathSemanticsBenchmark.java)) — Figure 4 (`fig:path-semantics`): Temporal Path Semantics (Continuous, Pairwise, Sequential across depths 2–5).
+4. **`representation-ablation`** ([`RepresentationAblationBenchmark.java`](src/main/java/com/temporal/gremlin/bench/RepresentationAblationBenchmark.java)) — Table 8 (`tab:representation-ablation-chronograph`): Dynamic String vs. ChronoGraph vs. Normalized `long[]`.
+5. **`multi-interval`** ([`MultiIntervalStressBenchmark.java`](src/main/java/com/temporal/gremlin/bench/MultiIntervalStressBenchmark.java)) — Table 9 (`tab:multi-interval-chronograph`): Multi-Interval Traversal Scalability ($k=1, 2, 5, 10$ up to 1M edges).
+6. **`pagerank`** ([`TemporalPageRankBenchmark.java`](src/main/java/com/temporal/gremlin/bench/TemporalPageRankBenchmark.java)) — Table 10 (`tab:temporal-pagerank-chronograph`): Causal Temporal PageRank vs. ChronoGraph Extract+TPR vs. Static PR.
+7. **`capabilities`** ([`TTinkerPopCapabilitiesScalingBenchmark.java`](src/main/java/com/temporal/gremlin/bench/TTinkerPopCapabilitiesScalingBenchmark.java)) — Table 11 (`tab:ttinkerpop-unique-scaling`): Ligozat $(p,q)$-Calculus, Historical Subgraph Views, Path Optimality.
+8. **`translator-vs-native`** ([`TranslatorVsNativeBenchmark.java`](src/main/java/com/temporal/gremlin/bench/TranslatorVsNativeBenchmark.java)) — Figures 1 & 2 (`fig:translation-overhead`, `fig:native-vs-exec-combined`): 4-phase translation latency breakdown vs. native Java bytecode execution across SF10 and Flight datasets.
+9. **`lifetime-storage`** ([`TemporalLifetimeStorageBenchmark.java`](src/main/java/com/temporal/gremlin/bench/TemporalLifetimeStorageBenchmark.java)) — Read/write latency across in-memory `lifetime()` storage representations.
 
 ---
 
@@ -181,7 +181,7 @@ Informational Options:
 
 ### Custom Datasets
 
-The suite uses [`DatasetResolver.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/util/DatasetResolver.java) to automatically detect flight datasets:
+The suite uses [`DatasetResolver.java`](src/main/java/com/temporal/gremlin/util/DatasetResolver.java) to automatically detect flight datasets:
 1. Custom path provided via `--dataset=<path>` or menu prompt.
 2. System property `-Dtemporal.dataset.path=<path>`.
 3. Environment variable `TEMPORAL_DATASET_PATH`.
@@ -201,8 +201,8 @@ By default, every run saves two mirrored artifacts in `results/`:
 
 ### Table 6: ChronoGraph Comparison on OpenSky
 
-- **Paper Reference**: Section VI-D, Table 6 (`tab:chronograph-comparison`) in [`journal.tex`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/journal.tex)
-- **Class**: [`ChronoGraphBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/ChronoGraphBenchmark.java)
+- **Paper Reference**: Section VI-D, Table 6 (`tab:chronograph-comparison`) in `journal.tex`
+- **Class**: [`ChronoGraphBenchmark.java`](src/main/java/com/temporal/gremlin/bench/ChronoGraphBenchmark.java)
 - **CLI Target**: `./bench.sh --target=chronograph`
 - **Evaluates**:
   1. **Macro-Benchmark (`tbfs`)**: Earliest-departure temporal reachability from hub airport across the OpenSky flight network.
@@ -231,8 +231,8 @@ By default, every run saves two mirrored artifacts in `results/`:
 
 ### Table 7: Index Selectivity Crossover & Ingestion Overhead
 
-- **Paper Reference**: Section VI-D, Table 7 (`tab:index-selectivity-tradeoff`) in [`journal.tex`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/journal.tex)
-- **Class**: [`IndexSelectivityTradeoffBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/IndexSelectivityTradeoffBenchmark.java)
+- **Paper Reference**: Section VI-D, Table 7 (`tab:index-selectivity-tradeoff`) in `journal.tex`
+- **Class**: [`IndexSelectivityTradeoffBenchmark.java`](src/main/java/com/temporal/gremlin/bench/IndexSelectivityTradeoffBenchmark.java)
 - **CLI Target**: `./bench.sh --target=index-selectivity`
 - **Evaluates**: `temporalOverlaps` query latency across 8 selectivities from `0.01%` to `75%` on 500,000 multi-interval edges ($k=3$, 1,500,000 intervals), alongside ingestion write cost.
 - **Ingestion Write Overhead**: Unindexed $= 198.25$\,ms vs. Indexed (`TemporalTinkerIndex`) $= 481.27$\,ms (**2.43x write overhead**).
@@ -259,8 +259,8 @@ By default, every run saves two mirrored artifacts in `results/`:
 
 ### Figure 4: Temporal Path Semantics
 
-- **Paper Reference**: Section VI-E, Figure 4 (`fig:path-semantics`) in [`journal.tex`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/journal.tex)
-- **Class**: [`TemporalPathSemanticsBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/TemporalPathSemanticsBenchmark.java)
+- **Paper Reference**: Section VI-E, Figure 4 (`fig:path-semantics`) in `journal.tex`
+- **Class**: [`TemporalPathSemanticsBenchmark.java`](src/main/java/com/temporal/gremlin/bench/TemporalPathSemanticsBenchmark.java)
 - **CLI Target**: `./bench.sh --target=path-semantics`
 - **Evaluates**: Scalability of Continuous, Pairwise-Continuous, and Sequential path traversal across depths 2 to 5 hops and limits 100, 1,000, 10,000 on Flight Single File (1.1M edges).
 
@@ -285,8 +285,8 @@ By default, every run saves two mirrored artifacts in `results/`:
 
 ### Table 8: Representation Ablation
 
-- **Paper Reference**: Section VI-F, Table 8 (`tab:representation-ablation-chronograph`) in [`journal.tex`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/journal.tex)
-- **Class**: [`RepresentationAblationBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/RepresentationAblationBenchmark.java)
+- **Paper Reference**: Section VI-F, Table 8 (`tab:representation-ablation-chronograph`) in `journal.tex`
+- **Class**: [`RepresentationAblationBenchmark.java`](src/main/java/com/temporal/gremlin/bench/RepresentationAblationBenchmark.java)
 - **CLI Target**: `./bench.sh --target=representation-ablation`
 - **Evaluates**: Isolates performance of T-TinkerPop's normalized primitive `long[]` representation against dynamic ISO-8601 string parsing and ChronoGraph's `TreeSet<ChronoEdgeEvent>` objects across 50K to 1M events.
 
@@ -313,8 +313,8 @@ By default, every run saves two mirrored artifacts in `results/`:
 
 ### Table 9: Multi-Interval Traversal Scalability
 
-- **Paper Reference**: Section VI-G, Table 9 (`tab:multi-interval-chronograph`) in [`journal.tex`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/journal.tex)
-- **Class**: [`MultiIntervalStressBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/MultiIntervalStressBenchmark.java)
+- **Paper Reference**: Section VI-G, Table 9 (`tab:multi-interval-chronograph`) in `journal.tex`
+- **Class**: [`MultiIntervalStressBenchmark.java`](src/main/java/com/temporal/gremlin/bench/MultiIntervalStressBenchmark.java)
 - **CLI Target**: `./bench.sh --target=multi-interval`
 - **Evaluates**: `temporalOverlaps` scaling with sub-interval multiplicity $k \in \{1, 2, 5, 10\}$ disjoint intervals per edge on up to 1,000,000 distinct edges (10,000,000 intervals).
 
@@ -343,8 +343,8 @@ By default, every run saves two mirrored artifacts in `results/`:
 
 ### Table 10: Temporal PageRank on OpenSky
 
-- **Paper Reference**: Section VI-H, Table 10 (`tab:temporal-pagerank-chronograph`) in [`journal.tex`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/journal.tex)
-- **Class**: [`TemporalPageRankBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/TemporalPageRankBenchmark.java)
+- **Paper Reference**: Section VI-H, Table 10 (`tab:temporal-pagerank-chronograph`) in `journal.tex`
+- **Class**: [`TemporalPageRankBenchmark.java`](src/main/java/com/temporal/gremlin/bench/TemporalPageRankBenchmark.java)
 - **CLI Target**: `./bench.sh --target=pagerank`
 - **Evaluates**: Native streaming `g.V().temporalPageRank()` (Rozenshtein & Gionis algorithm) against ChronoGraph event extraction + TPR and 20-iteration Static PageRank on OpenSky (50K to 1M flights).
 
@@ -366,8 +366,8 @@ By default, every run saves two mirrored artifacts in `results/`:
 
 ### Table 11: T-TinkerPop-Unique Capabilities Scaling
 
-- **Paper Reference**: Section VI-I, Table 11 (`tab:ttinkerpop-unique-scaling`) in [`journal.tex`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/journal.tex)
-- **Class**: [`TTinkerPopCapabilitiesScalingBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/TTinkerPopCapabilitiesScalingBenchmark.java)
+- **Paper Reference**: Section VI-I, Table 11 (`tab:ttinkerpop-unique-scaling`) in `journal.tex`
+- **Class**: [`TTinkerPopCapabilitiesScalingBenchmark.java`](src/main/java/com/temporal/gremlin/bench/TTinkerPopCapabilitiesScalingBenchmark.java)
 - **CLI Target**: `./bench.sh --target=capabilities`
 - **Evaluates**: Unique features of T-TinkerPop not supported in ChronoGraph from 10K to 1M multi-interval edges:
   1. **Suite A — Ligozat $(p,q)$-Calculus**: Single-pass `TemporalP.between(precedes, overlaps, ref)` (`294.39 ms` at 1M edges) is **2.60x–3.94x faster** than multi-branch `.or(...)` (`767.39 ms`). Zone-vector $\Pi(4,4)$ evaluation executes in `228.53 ms`.
@@ -390,19 +390,21 @@ By default, every run saves two mirrored artifacts in `results/`:
 
 ### Figures 1 & 2: Translation Overhead vs. Native Execution
 
-- **Paper Reference**: Section VI-C, Figures 1 & 2 (`fig:translation-overhead`, `fig:native-vs-exec-combined`) in [`journal.tex`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/journal.tex)
-- **Class**: [`TranslatorVsNativeBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/TranslatorVsNativeBenchmark.java)
+- **Paper Reference**: Section VI-C, Figures 1 & 2 (`fig:translation-overhead`, `fig:native-vs-exec-combined`) and Footnote 2 in `journal.tex`
+- **Class**: [`TranslatorVsNativeBenchmark.java`](src/main/java/com/temporal/gremlin/bench/TranslatorVsNativeBenchmark.java)
 - **CLI Target**: `./bench.sh --target=translator-vs-native`
-- **Key Findings**:
+- **Key Findings & Parity**:
+  - Evaluates **all 13 Allen interval relations** (covering the 4 representative operators plotted in Figure 2 plus the remaining 9 operators referenced in Footnote 2 of `journal.tex`).
+  - **100% Exact Parity**: `Native` (`g.E().temporalX(ref)`), `Execute` (translated `where(P.lt/gt/eq).by('startTime'/'endTime')` bytecode), and `Direct` (`has()` filters) return the **exact same edge match count** for all 13 Allen operators.
   - Translation phase overhead remains below $0.1$\,ms across all datasets, confirming the compilation step is negligible relative to query execution.
-  - Native temporal execution maintains a consistent $1.5\times$ to $3.0\times$ speedup over translated traversals across SF10, Flight Single File, and Flight Multi File by eliminating traverser wrapper allocations, object boxing, and generic string property lookups.
+  - Native temporal execution maintains a consistent $1.5\times$ to $3.0\times$ speedup over translated traversals across SF10, Flight Single File, and Flight Multi File by eliminating traverser wrapper allocations, object boxing, and generic property lookups.
 
 ---
 
 ### Additional Benchmarks: Storage Representation
 
 #### Lifetime Storage Benchmark (`--target=lifetime-storage`)
-- **Class**: [`TemporalLifetimeStorageBenchmark.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/main/java/com/temporal/gremlin/bench/TemporalLifetimeStorageBenchmark.java)
+- **Class**: [`TemporalLifetimeStorageBenchmark.java`](src/main/java/com/temporal/gremlin/bench/TemporalLifetimeStorageBenchmark.java)
 - Measures write normalization overhead and parse-on-read execution latency across varying `lifetime()` storage configurations.
 
 ---
@@ -423,11 +425,11 @@ mvn test
 
 | Test Class | Tests | Validated Paper Table | Primary Verification Objective |
 | :--- | :---: | :---: | :--- |
-| [`PaperBenchmarksCorrectnessTest.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/test/java/com/temporal/gremlin/PaperBenchmarksCorrectnessTest.java) | 6 | Tables VI, VII, VIII, IX, X, XI | End-to-end column-by-column parity and expected semantic differences across every paper table. |
-| [`ChronoGraphParityTest.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/test/java/com/temporal/gremlin/ChronoGraphParityTest.java) | 5 | Table 6 & Allen 13 | All 13 Allen operators (`ANY`/`ALL`), multi-interval consolidation, 5-mode `temporalBefore` parity, and `tbfs` reachability parity against ChronoGraph. |
-| [`TemporalPageRankTest.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/test/java/com/temporal/gremlin/TemporalPageRankTest.java) | 2 | Table 10 | Causal vs. anti-causal rank propagation and exact `1e-12` per-vertex score parity between T-TinkerPop and ChronoGraph event extraction. |
-| [`MultiIntervalStressTest.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/test/java/com/temporal/gremlin/MultiIntervalStressTest.java) | 2 | Table 9 | $O(1)$ bounding-box + $O(k \log k)$ plane-sweep parity across $k \in \{1, 2, 5, 10\}$ against ChronoGraph and $O(k^2)$ Cartesian check. |
-| [`RepresentationAblationTest.java`](file:///home/alex/Downloads/gremlin-temporal-translator-poc/src/test/java/com/temporal/gremlin/RepresentationAblationTest.java) | 2 | Table 8 | 100% match-count parity across dynamic ISO-8601 strings, ChronoGraph event trees, Gremlin traversals, and direct `long[]` sweeps. |
+| [`PaperBenchmarksCorrectnessTest.java`](src/test/java/com/temporal/gremlin/PaperBenchmarksCorrectnessTest.java) | 6 | Tables VI, VII, VIII, IX, X, XI | End-to-end column-by-column parity and expected semantic differences across every paper table. |
+| [`ChronoGraphParityTest.java`](src/test/java/com/temporal/gremlin/ChronoGraphParityTest.java) | 5 | Table 6 & Allen 13 | All 13 Allen operators (`ANY`/`ALL`), multi-interval consolidation, 5-mode `temporalBefore` parity, and `tbfs` reachability parity against ChronoGraph. |
+| [`TemporalPageRankTest.java`](src/test/java/com/temporal/gremlin/TemporalPageRankTest.java) | 2 | Table 10 | Causal vs. anti-causal rank propagation and exact `1e-12` per-vertex score parity between T-TinkerPop and ChronoGraph event extraction. |
+| [`MultiIntervalStressTest.java`](src/test/java/com/temporal/gremlin/MultiIntervalStressTest.java) | 2 | Table 9 | $O(1)$ bounding-box + $O(k \log k)$ plane-sweep parity across $k \in \{1, 2, 5, 10\}$ against ChronoGraph and $O(k^2)$ Cartesian check. |
+| [`RepresentationAblationTest.java`](src/test/java/com/temporal/gremlin/RepresentationAblationTest.java) | 2 | Table 8 | 100% match-count parity across dynamic ISO-8601 strings, ChronoGraph event trees, Gremlin traversals, and direct `long[]` sweeps. |
 
 ---
 
@@ -524,6 +526,6 @@ gremlin-temporal-translator-poc/
 
 ## References
 
-- **Paper Reproducibility Details**: See [**`BENCHMARKS_AND_CORRECTNESS.md`**](file:///home/alex/Downloads/gremlin-temporal-translator-poc/BENCHMARKS_AND_CORRECTNESS.md) for full mathematical analysis of semantic differences and detailed verification methodology.
+- **Paper Reproducibility Details**: See [**`BENCHMARKS_AND_CORRECTNESS.md`**](BENCHMARKS_AND_CORRECTNESS.md) for full mathematical analysis of semantic differences and detailed verification methodology.
 - **T-TinkerPop Engine**: [github.com/alexspitalas/T-tinkerpop](https://github.com/alexspitalas/T-tinkerpop)
 - **ChronoGraph Baseline**: [github.com/dfpl/chronograph-practice](https://github.com/dfpl/chronograph-practice)
