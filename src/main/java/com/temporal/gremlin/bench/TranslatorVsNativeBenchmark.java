@@ -136,7 +136,7 @@ public class TranslatorVsNativeBenchmark implements BenchmarkTask {
         g = graph.traversal();
         
         // Fast Native Loading
-        String csv = (currentCsvFile != null) ? currentCsvFile.getAbsolutePath() : DatasetResolver.resolveFlightCsv(null).getAbsolutePath();
+        String csv = (currentCsvFile != null) ? currentCsvFile.getAbsolutePath() : DatasetResolver.resolveFlightCsv().getAbsolutePath();
         GraphDataLoader loader = new GraphDataLoader(g);
         loader.load_dataset_flight_native(csv, size); 
 

@@ -54,7 +54,7 @@ public class RepresentationAblationBenchmark implements BenchmarkTask {
 
     @Override
     public String getName() {
-        return "Table VIII: Representation Ablation (String vs CG vs TPop)";
+        return "Table VIII (tab:representation-ablation-chronograph): Representation Ablation (String vs CG vs TPop)";
     }
 
     @Override

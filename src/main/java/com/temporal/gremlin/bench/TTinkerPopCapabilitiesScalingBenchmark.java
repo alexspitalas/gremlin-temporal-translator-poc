@@ -42,7 +42,7 @@ public class TTinkerPopCapabilitiesScalingBenchmark implements BenchmarkTask {
 
     @Override
     public String getName() {
-        return "Table XI: Scaling of T-TinkerPop Unique Capabilities";
+        return "Table XI (tab:ttinkerpop-unique-scaling): Scaling of T-TinkerPop Unique Capabilities";
     }
 
     @Override

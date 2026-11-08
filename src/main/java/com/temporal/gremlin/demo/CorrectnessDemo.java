@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
  */
 public class CorrectnessDemo {
 
-    private static final String CSV_PATH = DatasetResolver.resolveFlightCsv(null).getAbsolutePath();
+    private static final String CSV_PATH = DatasetResolver.resolveFlightCsv().getAbsolutePath();
     private static final int LIMIT = 10000;
     private static final int SAMPLE_SIZE = 500;
 

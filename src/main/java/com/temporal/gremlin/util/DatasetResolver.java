@@ -25,6 +25,18 @@ public class DatasetResolver {
     }
 
     /**
+     * Resolves the default flight dataset CSV file.
+     */
+    public static File resolveFlightCsv() {
+        return resolveFlightCsv((String) null);
+    }
+
+    public static File resolveFlightCsv(com.temporal.gremlin.benchmark.BenchmarkContext ctx) {
+        String path = (ctx != null && ctx.getDatasetFile() != null) ? ctx.getDatasetFile().getAbsolutePath() : null;
+        return resolveFlightCsv(path);
+    }
+
+    /**
      * Resolves the flight dataset CSV file.
      *
      * @param customPath User-specified path (nullable).
@@ -99,7 +111,7 @@ public class DatasetResolver {
      */
     public static boolean isDefaultDatasetAvailable() {
         try {
-            resolveFlightCsv(null);
+            resolveFlightCsv();
             return true;
         } catch (Exception e) {
             return false;

@@ -56,7 +56,7 @@ public class MultiIntervalStressBenchmark implements BenchmarkTask {
 
     @Override
     public String getName() {
-        return "Table IX: Multi-Interval Traversal Scalability (k=1..10)";
+        return "Table IX (tab:multi-interval-chronograph): Multi-Interval Traversal Scalability (k=1..10)";
     }
 
     @Override

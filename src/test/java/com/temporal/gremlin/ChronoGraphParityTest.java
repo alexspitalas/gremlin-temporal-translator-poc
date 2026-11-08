@@ -271,7 +271,7 @@ public class ChronoGraphParityTest {
 
     @Test
     public void testOpenSkyDatasetCorrectnessParityAcrossOperatorsAndPageRank() throws Exception {
-        File csv = DatasetResolver.resolveFlightCsv(null);
+        File csv = DatasetResolver.resolveFlightCsv();
         if (!csv.exists()) {
             return;
         }

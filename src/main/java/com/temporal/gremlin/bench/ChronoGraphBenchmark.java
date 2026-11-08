@@ -59,7 +59,7 @@ public class ChronoGraphBenchmark implements BenchmarkTask {
 
     @Override
     public String getName() {
-        return "Table V: OpenSky ChronoGraph vs T-TinkerPop (tBFS & Operators)";
+        return "Table VI (tab:chronograph-comparison): OpenSky ChronoGraph vs T-TinkerPop (tBFS & Operators)";
     }
 
     @Override
@@ -144,7 +144,7 @@ public class ChronoGraphBenchmark implements BenchmarkTask {
 
     private void initializeGraphs(int limit) throws Exception {
         if (currentCsvFile == null) {
-            currentCsvFile = DatasetResolver.resolveFlightCsv(null);
+            currentCsvFile = DatasetResolver.resolveFlightCsv();
         }
         unindexedGraph = TinkerGraph.open();
         gUnindexed = unindexedGraph.traversal();

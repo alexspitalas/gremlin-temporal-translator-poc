@@ -54,7 +54,7 @@ public class IndexSelectivityTradeoffBenchmark implements BenchmarkTask {
 
     @Override
     public String getName() {
-        return "Table VI: Index Selectivity Crossover & Ingestion Overhead";
+        return "Table VII (tab:index-selectivity-tradeoff): Index Selectivity Crossover & Ingestion Overhead";
     }
 
     @Override
@@ -76,8 +76,8 @@ public class IndexSelectivityTradeoffBenchmark implements BenchmarkTask {
     private static final long STEP_MS = 2_000L;
     private static final long EDGE_SPAN_MS = 1_000L;
 
-    private static final double[] SELECTIVITY_FRACTIONS = {0.0001, 0.001, 0.01, 0.05, 0.25, 0.75};
-    private static final String[] SELECTIVITY_LABELS = {"0.01%", "0.10%", "1.00%", "5.00%", "25.00%", "75.00%"};
+    private static final double[] SELECTIVITY_FRACTIONS = {0.0001, 0.001, 0.01, 0.05, 0.10, 0.25, 0.50, 0.75};
+    private static final String[] SELECTIVITY_LABELS = {"0.01%", "0.10%", "1.00%", "5.00%", "10.00%", "25.00%", "50.00%", "75.00%"};
 
     private static volatile Object sink;
 

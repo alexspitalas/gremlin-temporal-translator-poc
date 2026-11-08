@@ -139,8 +139,8 @@ public class CliArgsParser {
         System.out.println("  --suite, -s <suite>         Benchmark suite to run: paper | macro | micro | translator | all (default: paper)");
         System.out.println("  --target, -t <target>       Run single specific benchmark by name/id:");
         System.out.println("                              chronograph | index-selectivity | representation-ablation |");
-        System.out.println("                              multi-interval | pagerank | capabilities | lifetime-storage |");
-        System.out.println("                              translator-vs-native");
+        System.out.println("                              multi-interval | pagerank | capabilities | path-semantics |");
+        System.out.println("                              lifetime-storage | translator-vs-native");
         System.out.println("  --test-suite <suite>        Run correctness test suite: all | paper | chronograph | pagerank |");
         System.out.println("                              multi-interval | representation (default: all)");
         System.out.println("  --demo <demo-name>          Run demo: translator | correctness | apps | continuous-path | string");

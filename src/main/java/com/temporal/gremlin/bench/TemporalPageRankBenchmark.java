@@ -57,7 +57,7 @@ public class TemporalPageRankBenchmark implements BenchmarkTask {
 
     @Override
     public String getName() {
-        return "Table X: Temporal PageRank on OpenSky";
+        return "Table X (tab:temporal-pagerank-chronograph): Temporal PageRank on OpenSky";
     }
 
     @Override
@@ -175,7 +175,7 @@ public class TemporalPageRankBenchmark implements BenchmarkTask {
 
     private void loadDataset(int limit) throws Exception {
         if (currentCsvFile == null) {
-            currentCsvFile = DatasetResolver.resolveFlightCsv(null);
+            currentCsvFile = DatasetResolver.resolveFlightCsv();
         }
         graph = TinkerGraph.open();
         g = graph.traversal();

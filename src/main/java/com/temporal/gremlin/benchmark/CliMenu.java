@@ -40,7 +40,7 @@ public class CliMenu {
 
         // 1. Choose Main Action
         System.out.println("What would you like to run?");
-        System.out.println("  [1] Run Benchmark Suite (Default: Full Paper Suite Tables V-XI)  [Default]");
+        System.out.println("  [1] Run Benchmark Suite (Default: Paper Suite Tables VI-XI & Figures)  [Default]");
         System.out.println("  [2] Run Correctness & Cross-Engine Parity Tests (JUnit 17 Tests)");
         System.out.println("  [3] Run Full Verification + Benchmarks (Both)");
         System.out.println("  [4] Run Interactive Demos (Translator, Apps, Continuous Path)");
@@ -100,11 +100,11 @@ public class CliMenu {
 
     private void configureBenchmarkSuite(MenuConfig cfg) {
         System.out.println("\nSelect Benchmark Suite to Run:");
-        System.out.println("  [1] Paper Reproduction Suite (Tables V, VI, VIII, IX, X, XI)     [Default]");
-        System.out.println("  [2] Macro-Benchmarks (tBFS reachability, PageRank, Multi-Interval)");
+        System.out.println("  [1] Paper Reproduction Suite (Tables VI-XI & Figures 1, 2, 4)     [Default]");
+        System.out.println("  [2] Macro-Benchmarks (tBFS reachability, PageRank, Multi-Interval, Path Semantics)");
         System.out.println("  [3] Micro-Benchmarks (Index Selectivity, Representation Ablation, Storage)");
         System.out.println("  [4] Translator vs Native Benchmark (Pipeline breakdown & T-Gremlin)");
-        System.out.println("  [5] Run All 8 Benchmarks");
+        System.out.println("  [5] Run All Benchmarks");
         System.out.println("  [6] Single Benchmark by Name/Number...");
         System.out.print("Select suite [1]: ");
 
@@ -150,8 +150,8 @@ public class CliMenu {
 
     private void configureTestSuite(MenuConfig cfg) {
         System.out.println("\nSelect Correctness Test Suite:");
-        System.out.println("  [1] All 17 Parity & Correctness Tests (Tables V-XI + ChronoGraph) [Default]");
-        System.out.println("  [2] Table V-XI Paper Parity (PaperBenchmarksCorrectnessTest)");
+        System.out.println("  [1] All 17 Parity & Correctness Tests (Paper Tables VI-XI + ChronoGraph) [Default]");
+        System.out.println("  [2] Paper Parity Suite (PaperBenchmarksCorrectnessTest)");
         System.out.println("  [3] ChronoGraph Allen & BFS Parity (ChronoGraphParityTest)");
         System.out.println("  [4] Temporal PageRank Score Parity (TemporalPageRankTest)");
         System.out.println("  [5] Multi-Interval Sweep Parity (MultiIntervalStressTest)");

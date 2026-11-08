@@ -18,6 +18,7 @@ public class BenchmarkRegistry {
         register(new MultiIntervalStressBenchmark());
         register(new TemporalPageRankBenchmark());
         register(new TTinkerPopCapabilitiesScalingBenchmark());
+        register(new TemporalPathSemanticsBenchmark());
         register(new TemporalLifetimeStorageBenchmark());
         register(new TranslatorVsNativeBenchmark());
     }
@@ -64,7 +65,7 @@ public class BenchmarkRegistry {
     }
 
     private static boolean isMacroTask(String id) {
-        return "chronograph".equals(id) || "pagerank".equals(id) || "multi-interval".equals(id);
+        return "chronograph".equals(id) || "pagerank".equals(id) || "multi-interval".equals(id) || "path-semantics".equals(id);
     }
 
     private static boolean isMicroTask(String id) {

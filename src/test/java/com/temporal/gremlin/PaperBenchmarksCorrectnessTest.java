@@ -51,7 +51,7 @@ import static org.junit.Assert.*;
  */
 public class PaperBenchmarksCorrectnessTest {
 
-    private static final String CSV_PATH = DatasetResolver.resolveFlightCsv(null).getAbsolutePath();
+    private static final String CSV_PATH = DatasetResolver.resolveFlightCsv().getAbsolutePath();
     private static final DateTimeFormatter CSV_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssXXX");
     private static final DateTimeFormatter ISO_FMT = DateTimeFormatter.ISO_INSTANT;
 

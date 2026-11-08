@@ -4,8 +4,8 @@ package com.temporal.gremlin.benchmark;
  * Grouping categories for benchmarks.
  */
 public enum BenchmarkGroup {
-    PAPER("paper", "Paper Reproduction Suite (Tables V, VI, VIII, IX, X, XI)",
-            "Reproduces all benchmark tables published in the T-TinkerPop journal paper."),
+    PAPER("paper", "Paper Reproduction Suite (Tables VI-XI & Figures 1, 2, 4)",
+            "Reproduces all benchmark tables and experiments published in the T-TinkerPop journal paper."),
     MACRO("macro", "Macro-Benchmarks (Reachability & Streaming Analytics)",
             "Complex end-to-end algorithms: Temporal BFS reachability, Temporal PageRank, and Multi-Interval stress."),
     MICRO("micro", "Micro-Benchmarks (Storage, Representation, Selectivity)",
